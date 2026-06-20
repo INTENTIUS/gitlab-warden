@@ -106,6 +106,25 @@ export interface ProtectedEnvironmentConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Deploy keys & tokens
+// ---------------------------------------------------------------------------
+
+/** A project deploy key (keyed by title). The public `key` is set on create. */
+export interface DeployKeyConfig {
+  title: string;
+  key: string;
+  canPush?: boolean;
+}
+
+/** A group/project deploy token (keyed by name). Immutable — reconciled by presence. */
+export interface DeployTokenConfig {
+  name: string;
+  scopes?: string[];
+  expiresAt?: string;
+  username?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Push rules
 // ---------------------------------------------------------------------------
 
@@ -211,6 +230,8 @@ export interface NodeConfig {
   protectedBranches?: ProtectedBranchConfig[];
   protectedTags?: ProtectedTagConfig[];
   protectedEnvironments?: ProtectedEnvironmentConfig[];
+  deployKeys?: DeployKeyConfig[];
+  deployTokens?: DeployTokenConfig[];
   pushRules?: PushRulesConfig;
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;

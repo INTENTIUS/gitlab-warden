@@ -63,6 +63,22 @@ export interface LiveProtectedEnvironment {
   requiredApprovalCount?: number;
 }
 
+export interface LiveDeployKey {
+  /** Deploy key id (apply path; never diffed). */
+  id?: number;
+  title: string;
+  canPush?: boolean;
+}
+
+export interface LiveDeployToken {
+  /** Deploy token id (apply path; never diffed). */
+  id?: number;
+  name: string;
+  scopes?: string[];
+  expiresAt?: string;
+  username?: string;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -123,6 +139,8 @@ export interface LiveNodeState {
   protectedBranches?: LiveProtectedBranch[];
   protectedTags?: LiveProtectedTag[];
   protectedEnvironments?: LiveProtectedEnvironment[];
+  deployKeys?: LiveDeployKey[];
+  deployTokens?: LiveDeployToken[];
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;

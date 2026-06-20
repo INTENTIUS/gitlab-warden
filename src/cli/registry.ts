@@ -17,10 +17,12 @@ import { baselineCycle } from "../cycles/baseline.js";
 import { mrApprovalsCycle } from "../cycles/mr-approvals.js";
 import { protectedTagsCycle } from "../cycles/protected-tags.js";
 import { protectedEnvironmentsCycle } from "../cycles/protected-environments.js";
+import { deployKeysTokensCycle } from "../cycles/deploy-keys-tokens.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [protectedTagsCycle.name]: protectedTagsCycle,
   [protectedEnvironmentsCycle.name]: protectedEnvironmentsCycle,
+  [deployKeysTokensCycle.name]: deployKeysTokensCycle,
   [groupSettingsCycle.name]: groupSettingsCycle,
   [projectSettingsCycle.name]: projectSettingsCycle,
   [membersCycle.name]: membersCycle,
