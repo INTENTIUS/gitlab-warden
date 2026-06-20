@@ -7,7 +7,9 @@
 
 import type { Cycle } from "../reconcile/runner.js";
 import { groupSettingsCycle } from "../cycles/group-settings.js";
+import { projectSettingsCycle } from "../cycles/project-settings.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [groupSettingsCycle.name]: groupSettingsCycle,
+  [projectSettingsCycle.name]: projectSettingsCycle,
 };
