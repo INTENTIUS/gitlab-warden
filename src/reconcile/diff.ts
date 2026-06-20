@@ -1,0 +1,361 @@
+/**
+ * GitLab plan/diff.
+ *
+ * Composes the shared `diffCollection` / `diffFields` primitives from
+ * `@intentius/chant/reconcile` over GitLab's resource types into a `ChangeSet`.
+ * The diff machinery is imported, not vendored.
+ *
+ * Selective-by-omission (a field/collection absent from desired is never
+ * diffed) and ownership-gated deletes (`opts.isOwned`).
+ *
+ * Members are diffed against the **direct** roster only (fetchLive returns
+ * direct members) — so an inherited member, never present in `live`, can never
+ * produce a delete entry (see DESIGN.md §2).
+ */
+
+import {
+  diffCollection,
+  diffFields,
+  summarizeChangeSet,
+  renderChangeSet,
+} from "@intentius/chant/reconcile";
+import type {
+  ChangeSet,
+  ChangeSetEntry,
+  DiffOptions,
+  FieldChange,
+} from "@intentius/chant/reconcile";
+import type {
+  NodeConfig,
+  GroupSettings,
+  ProjectSettings,
+  MemberConfig,
+  ProtectedBranchConfig,
+  ProtectedTagConfig,
+  PushRulesConfig,
+  ApprovalRuleConfig,
+  ApprovalSettings,
+  VariableConfig,
+  WebhookConfig,
+  BaselineConfig,
+} from "../config/types.js";
+import type {
+  LiveNodeState,
+  LiveGroupSettings,
+  LiveProjectSettings,
+  LiveMember,
+  LiveProtectedBranch,
+  LiveProtectedTag,
+  LivePushRules,
+  LiveApprovalRule,
+  LiveApprovalSettings,
+  LiveVariable,
+  LiveWebhook,
+} from "./live.js";
+import { toAccessNumber } from "../config/access-levels.js";
+
+// Re-export the shared change-set surface so cycles import it from here.
+export type { ChangeSet, ChangeSetEntry, DiffOptions, FieldChange } from "@intentius/chant/reconcile";
+export { summarizeChangeSet, renderChangeSet } from "@intentius/chant/reconcile";
+
+const RESOURCE_TYPE_ORDER = [
+  "group-settings",
+  "project-settings",
+  "push-rules",
+  "approval-settings",
+  "baseline",
+  "member",
+  "protected-branch",
+  "protected-tag",
+  "approval-rule",
+  "variable",
+  "webhook",
+] as const;
+
+export function diff(
+  node: string,
+  desired: NodeConfig,
+  live: LiveNodeState,
+  opts: DiffOptions = {},
+): ChangeSet {
+  const entries: ChangeSetEntry[] = [];
+
+  diffObject("group-settings", desired.groupSettings, live.groupSettings, GROUP_FIELDS, entries);
+  diffObject("project-settings", desired.projectSettings, live.projectSettings, PROJECT_FIELDS, entries);
+  diffObject("push-rules", desired.pushRules, live.pushRules, PUSH_RULE_FIELDS, entries);
+  diffObject("approval-settings", desired.approvalSettings, live.approvalSettings, APPROVAL_SETTING_FIELDS, entries);
+  diffMembers(desired.members, live.members ?? [], opts, entries);
+  diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
+  diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
+  diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
+  diffVariables(desired.variables, live.variables ?? [], opts, entries);
+  diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
+  diffBaselines(desired.baselines, live.children ?? [], entries);
+
+  const typeIndex = (t: string): number => {
+    const i = (RESOURCE_TYPE_ORDER as readonly string[]).indexOf(t);
+    return i === -1 ? RESOURCE_TYPE_ORDER.length : i;
+  };
+  entries.sort((a, b) => {
+    const ti = typeIndex(a.resourceType) - typeIndex(b.resourceType);
+    return ti !== 0 ? ti : a.key.localeCompare(b.key);
+  });
+
+  return { org: node, entries };
+}
+
+// ---------------------------------------------------------------------------
+// Single-object slices (settings, push rules)
+// ---------------------------------------------------------------------------
+
+const GROUP_FIELDS = [
+  "name",
+  "description",
+  "visibility",
+  "requestAccessEnabled",
+  "projectCreationLevel",
+  "subgroupCreationLevel",
+  "preventForkingOutsideGroup",
+  "mentionsDisabled",
+];
+const PROJECT_FIELDS = [
+  "description",
+  "visibility",
+  "defaultBranch",
+  "mergeMethod",
+  "squashOption",
+  "onlyAllowMergeIfPipelineSucceeds",
+  "onlyAllowMergeIfAllDiscussionsAreResolved",
+  "removeSourceBranchAfterMerge",
+];
+const PUSH_RULE_FIELDS = [
+  "commitMessageRegex",
+  "commitMessageNegativeRegex",
+  "branchNameRegex",
+  "authorEmailRegex",
+  "fileNameRegex",
+  "maxFileSize",
+  "preventSecrets",
+  "memberCheck",
+  "rejectUnsignedCommits",
+  "rejectNonDcoCommits",
+];
+const APPROVAL_SETTING_FIELDS = [
+  "resetApprovalsOnPush",
+  "disableOverridingApproversPerMergeRequest",
+  "mergeRequestsAuthorApproval",
+  "mergeRequestsDisableCommittersApproval",
+  "requirePasswordToApprove",
+];
+
+function diffObject(
+  resourceType: string,
+  desired:
+    | GroupSettings
+    | ProjectSettings
+    | PushRulesConfig
+    | ApprovalSettings
+    | undefined,
+  live:
+    | LiveGroupSettings
+    | LiveProjectSettings
+    | LivePushRules
+    | LiveApprovalSettings
+    | undefined,
+  fields: string[],
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  if (live === undefined) {
+    out.push({ kind: "create", resourceType, key: resourceType, after: desired });
+    return;
+  }
+  // project-settings carries topics (array) handled here for project only.
+  const changed = diffFields(desired as Record<string, unknown>, live as Record<string, unknown>, fields);
+  if (resourceType === "project-settings") {
+    const d = desired as ProjectSettings;
+    const l = live as LiveProjectSettings;
+    if (d.topics !== undefined) {
+      const a = [...d.topics].sort().join(",");
+      const b = [...(l.topics ?? [])].sort().join(",");
+      if (a !== b) changed.push({ field: "topics", before: l.topics ?? [], after: d.topics });
+    }
+  }
+  if (changed.length > 0) {
+    out.push({ kind: "update", resourceType, key: resourceType, before: live, after: desired, fields: changed });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Members (direct only; access-level compared)
+// ---------------------------------------------------------------------------
+
+function diffMembers(
+  desired: MemberConfig[] | undefined,
+  live: LiveMember[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<MemberConfig, LiveMember>({
+    resourceType: "member",
+    desired: new Map(desired.map((m) => [String(m.user), m])),
+    live: new Map(live.map((m) => [m.username, m])),
+    compareFields: (dm, lm) => {
+      const fields: FieldChange[] = [];
+      const want = toAccessNumber(dm.accessLevel);
+      if (want !== lm.accessLevel) fields.push({ field: "accessLevel", before: lm.accessLevel, after: want });
+      if (dm.memberRoleId !== undefined && dm.memberRoleId !== lm.memberRoleId) {
+        fields.push({ field: "memberRoleId", before: lm.memberRoleId, after: dm.memberRoleId });
+      }
+      return fields;
+    },
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Protected branches / tags
+// ---------------------------------------------------------------------------
+
+const PB_FIELDS = ["pushAccessLevel", "mergeAccessLevel", "unprotectAccessLevel", "allowForcePush", "codeOwnerApprovalRequired"];
+
+function diffProtectedBranches(
+  desired: ProtectedBranchConfig[] | undefined,
+  live: LiveProtectedBranch[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<ProtectedBranchConfig, LiveProtectedBranch>({
+    resourceType: "protected-branch",
+    desired: new Map(desired.map((b) => [b.name, b])),
+    live: new Map(live.map((b) => [b.name, b])),
+    compareFields: (db, lb) =>
+      diffFields(db as unknown as Record<string, unknown>, lb as unknown as Record<string, unknown>, PB_FIELDS),
+    opts,
+    out,
+  });
+}
+
+function diffProtectedTags(
+  desired: ProtectedTagConfig[] | undefined,
+  live: LiveProtectedTag[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<ProtectedTagConfig, LiveProtectedTag>({
+    resourceType: "protected-tag",
+    desired: new Map(desired.map((t) => [t.name, t])),
+    live: new Map(live.map((t) => [t.name, t])),
+    compareFields: (dt, lt) =>
+      diffFields(dt as unknown as Record<string, unknown>, lt as unknown as Record<string, unknown>, ["createAccessLevel"]),
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Approval rules
+// ---------------------------------------------------------------------------
+
+function diffApprovalRules(
+  desired: ApprovalRuleConfig[] | undefined,
+  live: LiveApprovalRule[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<ApprovalRuleConfig, LiveApprovalRule>({
+    resourceType: "approval-rule",
+    desired: new Map(desired.map((r) => [r.name, r])),
+    live: new Map(live.map((r) => [r.name, r])),
+    compareFields: (dr, lr) => {
+      const fields = diffFields(dr as unknown as Record<string, unknown>, lr as unknown as Record<string, unknown>, ["approvalsRequired"]);
+      for (const f of ["userIds", "groupIds", "protectedBranchIds"] as const) {
+        if (dr[f] !== undefined) {
+          const a = [...(dr[f] ?? [])].sort().join(",");
+          const b = [...(lr[f] ?? [])].sort().join(",");
+          if (a !== b) fields.push({ field: f, before: lr[f] ?? [], after: dr[f] });
+        }
+      }
+      return fields;
+    },
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// CI/CD variables (keyed by key + environment scope)
+// ---------------------------------------------------------------------------
+
+function varKey(key: string, scope?: string): string {
+  return `${key}@${scope ?? "*"}`;
+}
+
+function diffVariables(
+  desired: VariableConfig[] | undefined,
+  live: LiveVariable[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<VariableConfig, LiveVariable>({
+    resourceType: "variable",
+    desired: new Map(desired.map((v) => [varKey(v.key, v.environmentScope), v])),
+    live: new Map(live.map((v) => [varKey(v.key, v.environmentScope), v])),
+    compareFields: (dv, lv) => {
+      const fields: FieldChange[] = [];
+      if (dv.value !== undefined && dv.value !== lv.value) fields.push({ field: "value", before: lv.value, after: dv.value });
+      for (const f of ["protected", "masked", "variableType"] as const) {
+        if (dv[f] !== undefined && dv[f] !== lv[f]) fields.push({ field: f, before: lv[f], after: dv[f] });
+      }
+      return fields;
+    },
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Webhooks (keyed by url; live id carried for apply)
+// ---------------------------------------------------------------------------
+
+const HOOK_FIELDS = ["pushEvents", "mergeRequestsEvents", "tagPushEvents", "issuesEvents", "pipelineEvents", "enableSslVerification"];
+
+function diffWebhooks(
+  desired: WebhookConfig[] | undefined,
+  live: LiveWebhook[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<WebhookConfig, LiveWebhook>({
+    resourceType: "webhook",
+    desired: new Map(desired.map((w) => [w.url, w])),
+    live: new Map(live.map((w) => [w.url, w])),
+    compareFields: (dw, lw) =>
+      diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS),
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Baselines (existence only)
+// ---------------------------------------------------------------------------
+
+function diffBaselines(
+  desired: BaselineConfig[] | undefined,
+  liveChildren: string[],
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  const have = new Set(liveChildren);
+  for (const b of desired) {
+    if (!have.has(b.path)) out.push({ kind: "create", resourceType: "baseline", key: b.path, after: b });
+  }
+}
