@@ -6,7 +6,8 @@
 # In GitHub Actions ($GITHUB_ENV set) the values are appended there; locally it
 # prints `export …` lines:  eval "$(e2e/bootstrap.sh)"  then  npm run test:e2e:run
 #
-# ⚠️ GitLab CE boots slowly (~3-5 min). This script waits up to ~10 min.
+# ⚠️ GitLab CE first-boot runs `gitlab-ctl reconfigure` and is SLOW on CI
+# runners (~8-15 min). This script waits up to ~25 min for /-/health.
 set -euo pipefail
 
 COMPOSE="docker compose -f e2e/docker-compose.yml"
@@ -18,11 +19,12 @@ log() { echo "[bootstrap] $*" >&2; }
 log "starting GitLab CE (this is slow)…"
 $COMPOSE up -d >&2
 
-log "waiting for /-/health…"
-for i in $(seq 1 120); do
-  if curl -fsS "${URL}/-/health" >/dev/null 2>&1; then break; fi
+log "waiting for /-/health (GitLab CE cold boot, be patient)…"
+for i in $(seq 1 300); do
+  if curl -fsS "${URL}/-/health" >/dev/null 2>&1; then log "healthy after ~$((i * 5))s"; break; fi
   sleep 5
-  if [ "$i" = "120" ]; then log "GitLab did not become healthy in time"; $COMPOSE logs --tail=50 >&2 || true; exit 1; fi
+  if [ $((i % 24)) -eq 0 ]; then log "still booting… ~$((i * 5))s elapsed"; fi
+  if [ "$i" = "300" ]; then log "GitLab did not become healthy in ~25 min"; $COMPOSE logs --tail=80 >&2 || true; exit 1; fi
 done
 
 # Health can pass before the rails app fully accepts runner commands — retry.
