@@ -1,0 +1,51 @@
+name: publish
+
+# Publishes gitlab-warden to npm on a version tag (e.g. v0.2.0), or manually.
+# Use `just release [patch|minor|major]` to bump + tag + push.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Gate the publish on the same checks CI runs on every PR.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24' # npm 11.x — OIDC trusted publishing needs npm >= 11.5.1
+          cache: npm
+      - run: npm ci
+      - name: typecheck
+        run: npx tsc --noEmit
+      - name: test
+        run: npm test
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # OIDC trusted publishing (2FA-exempt; no token)
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24' # npm 11.x — OIDC trusted publishing needs npm >= 11.5.1
+          cache: npm
+          # No registry-url on purpose: it would write an .npmrc with a
+          # placeholder token that 404s; without it, npm publish uses the OIDC
+          # id-token via the package's trusted-publisher record.
+      - run: npm ci
+      - name: Publish @intentius/gitlab-warden
+        run: |
+          V=$(node -e "process.stdout.write(require('./package.json').version)")
+          P=$(npm view @intentius/gitlab-warden version 2>/dev/null || echo "none")
+          [ "$V" = "$P" ] && echo "@intentius/gitlab-warden@$V already published, skipping" || npm publish --access public --provenance
