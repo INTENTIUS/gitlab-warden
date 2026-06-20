@@ -1,0 +1,27 @@
+# Throwaway GitLab CE instance for the hermetic e2e suite.
+#
+# GitLab CE is heavy (multi-GB image, ~3-5 min cold boot) — much more than
+# Forgejo. The token is minted afterward by e2e/bootstrap.sh via gitlab-rails.
+# `docker compose down -v` removes all state.
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:17.11.0-ce.0
+    container_name: gitlab-warden-e2e
+    shm_size: "256m"
+    environment:
+      GITLAB_OMNIBUS_CONFIG: |
+        external_url 'http://localhost:8929'
+        gitlab_rails['initial_root_password'] = 'Warden-e2e-root-pw-12345'
+        gitlab_rails['rack_attack_git_basic_auth'] = {}
+        prometheus_monitoring['enable'] = false
+        puma['worker_processes'] = 0
+        sidekiq['max_concurrency'] = 3
+        gitlab_rails['gitlab_default_can_create_group'] = true
+    ports:
+      - "8929:8929"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8929/-/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 120s
