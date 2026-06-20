@@ -124,6 +124,14 @@ export interface DeployTokenConfig {
   username?: string;
 }
 
+/** A group/project access token (bot, keyed by name). Immutable — reconciled by presence. */
+export interface AccessTokenConfig {
+  name: string;
+  scopes?: string[];
+  accessLevel?: AccessLevel;
+  expiresAt?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Push rules
 // ---------------------------------------------------------------------------
@@ -248,6 +256,7 @@ export interface NodeConfig {
   protectedEnvironments?: ProtectedEnvironmentConfig[];
   deployKeys?: DeployKeyConfig[];
   deployTokens?: DeployTokenConfig[];
+  accessTokens?: AccessTokenConfig[];
   pushRules?: PushRulesConfig;
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
