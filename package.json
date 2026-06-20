@@ -1,6 +1,6 @@
 {
   "name": "@intentius/gitlab-warden",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Declarative governance for GitLab groups & projects — stateless, drift-correcting reconcile in CI (no Terraform state, no Ultimate)",
   "license": "Apache-2.0",
