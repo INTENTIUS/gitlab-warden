@@ -97,6 +97,14 @@ export interface ProtectedTagConfig {
   createAccessLevel?: number;
 }
 
+/** A protected environment (group or project; Premium). Keyed by `name`. */
+export interface ProtectedEnvironmentConfig {
+  name: string;
+  /** Access levels allowed to deploy. */
+  deployAccessLevels?: number[];
+  requiredApprovalCount?: number;
+}
+
 // ---------------------------------------------------------------------------
 // Push rules
 // ---------------------------------------------------------------------------
@@ -202,6 +210,7 @@ export interface NodeConfig {
   members?: MemberConfig[];
   protectedBranches?: ProtectedBranchConfig[];
   protectedTags?: ProtectedTagConfig[];
+  protectedEnvironments?: ProtectedEnvironmentConfig[];
   pushRules?: PushRulesConfig;
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
