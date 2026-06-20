@@ -33,6 +33,8 @@ import type {
   ProtectedBranchConfig,
   ProtectedTagConfig,
   ProtectedEnvironmentConfig,
+  DeployKeyConfig,
+  DeployTokenConfig,
   PushRulesConfig,
   ApprovalRuleConfig,
   ApprovalSettings,
@@ -48,6 +50,8 @@ import type {
   LiveProtectedBranch,
   LiveProtectedTag,
   LiveProtectedEnvironment,
+  LiveDeployKey,
+  LiveDeployToken,
   LivePushRules,
   LiveApprovalRule,
   LiveApprovalSettings,
@@ -70,6 +74,8 @@ const RESOURCE_TYPE_ORDER = [
   "protected-branch",
   "protected-tag",
   "protected-environment",
+  "deploy-key",
+  "deploy-token",
   "approval-rule",
   "variable",
   "webhook",
@@ -91,6 +97,8 @@ export function diff(
   diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
   diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
   diffProtectedEnvironments(desired.protectedEnvironments, live.protectedEnvironments ?? [], opts, entries);
+  diffDeployKeys(desired.deployKeys, live.deployKeys ?? [], opts, entries);
+  diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
@@ -281,6 +289,41 @@ function diffProtectedEnvironments(
       }
       return fields;
     },
+    opts,
+    out,
+  });
+}
+
+function diffDeployKeys(
+  desired: DeployKeyConfig[] | undefined,
+  live: LiveDeployKey[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<DeployKeyConfig, LiveDeployKey>({
+    resourceType: "deploy-key",
+    desired: new Map(desired.map((k) => [k.title, k])),
+    live: new Map(live.map((k) => [k.title, k])),
+    compareFields: (dk, lk) => diffFields(dk as unknown as Record<string, unknown>, lk as unknown as Record<string, unknown>, ["canPush"]),
+    opts,
+    out,
+  });
+}
+
+function diffDeployTokens(
+  desired: DeployTokenConfig[] | undefined,
+  live: LiveDeployToken[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  // Tokens are immutable — reconciled by presence (create/delete only).
+  diffCollection<DeployTokenConfig, LiveDeployToken>({
+    resourceType: "deploy-token",
+    desired: new Map(desired.map((t) => [t.name, t])),
+    live: new Map(live.map((t) => [t.name, t])),
+    compareFields: () => [],
     opts,
     out,
   });
