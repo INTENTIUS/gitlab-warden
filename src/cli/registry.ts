@@ -12,6 +12,7 @@ import { membersCycle } from "../cycles/members.js";
 import { protectedBranchesCycle } from "../cycles/protected-branches.js";
 import { pushRulesCycle } from "../cycles/push-rules.js";
 import { ciVariablesCycle } from "../cycles/ci-variables.js";
+import { webhooksCycle } from "../cycles/webhooks.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [groupSettingsCycle.name]: groupSettingsCycle,
@@ -20,4 +21,5 @@ export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [protectedBranchesCycle.name]: protectedBranchesCycle,
   [pushRulesCycle.name]: pushRulesCycle,
   [ciVariablesCycle.name]: ciVariablesCycle,
+  [webhooksCycle.name]: webhooksCycle,
 };
