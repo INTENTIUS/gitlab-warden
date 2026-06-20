@@ -237,6 +237,16 @@ export interface BaselineConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Advanced protections
+// ---------------------------------------------------------------------------
+
+/** CI/CD job token scope (project). Controls inbound token access. */
+export interface JobTokenScopeConfig {
+  /** Whether other projects need to be allowlisted to use this project's job token. */
+  inboundEnabled?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Node + top-level config
 // ---------------------------------------------------------------------------
 
@@ -258,6 +268,7 @@ export interface NodeConfig {
   deployTokens?: DeployTokenConfig[];
   accessTokens?: AccessTokenConfig[];
   pushRules?: PushRulesConfig;
+  jobTokenScope?: JobTokenScopeConfig;
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];
