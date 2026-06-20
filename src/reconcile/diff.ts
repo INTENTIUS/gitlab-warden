@@ -73,6 +73,7 @@ const RESOURCE_TYPE_ORDER = [
   "project-settings",
   "push-rules",
   "approval-settings",
+  "job-token-scope",
   "baseline",
   "member",
   "protected-branch",
@@ -99,6 +100,7 @@ export function diff(
   diffObject("project-settings", desired.projectSettings, live.projectSettings, PROJECT_FIELDS, entries);
   diffObject("push-rules", desired.pushRules, live.pushRules, PUSH_RULE_FIELDS, entries);
   diffObject("approval-settings", desired.approvalSettings, live.approvalSettings, APPROVAL_SETTING_FIELDS, entries);
+  diffObject("job-token-scope", desired.jobTokenScope, live.jobTokenScope, ["inboundEnabled"], entries);
   diffMembers(desired.members, live.members ?? [], opts, entries);
   diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
   diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
@@ -170,18 +172,8 @@ const APPROVAL_SETTING_FIELDS = [
 
 function diffObject(
   resourceType: string,
-  desired:
-    | GroupSettings
-    | ProjectSettings
-    | PushRulesConfig
-    | ApprovalSettings
-    | undefined,
-  live:
-    | LiveGroupSettings
-    | LiveProjectSettings
-    | LivePushRules
-    | LiveApprovalSettings
-    | undefined,
+  desired: object | undefined,
+  live: object | undefined,
   fields: string[],
   out: ChangeSetEntry[],
 ): void {

@@ -89,6 +89,10 @@ export interface LiveAccessToken {
   active?: boolean;
 }
 
+export interface LiveJobTokenScope {
+  inboundEnabled?: boolean;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -157,6 +161,7 @@ export interface LiveNodeState {
   deployKeys?: LiveDeployKey[];
   deployTokens?: LiveDeployToken[];
   accessTokens?: LiveAccessToken[];
+  jobTokenScope?: LiveJobTokenScope;
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
