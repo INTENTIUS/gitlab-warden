@@ -93,6 +93,14 @@ export interface LiveJobTokenScope {
   inboundEnabled?: boolean;
 }
 
+export interface LiveMemberRole {
+  /** Role id (apply path; never diffed). */
+  id?: number;
+  name: string;
+  baseAccessLevel?: number;
+  permissions?: string[];
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -162,6 +170,7 @@ export interface LiveNodeState {
   deployTokens?: LiveDeployToken[];
   accessTokens?: LiveAccessToken[];
   jobTokenScope?: LiveJobTokenScope;
+  memberRoles?: LiveMemberRole[];
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;

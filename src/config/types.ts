@@ -246,6 +246,14 @@ export interface JobTokenScopeConfig {
   inboundEnabled?: boolean;
 }
 
+/** A custom member role (Ultimate; group or instance). Keyed by name. */
+export interface MemberRoleConfig {
+  name: string;
+  baseAccessLevel: AccessLevel;
+  /** Enabled fine-grained permissions, e.g. ["read_code", "admin_merge_request"]. */
+  permissions?: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Node + top-level config
 // ---------------------------------------------------------------------------
@@ -269,6 +277,7 @@ export interface NodeConfig {
   accessTokens?: AccessTokenConfig[];
   pushRules?: PushRulesConfig;
   jobTokenScope?: JobTokenScopeConfig;
+  memberRoles?: MemberRoleConfig[];
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];
