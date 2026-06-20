@@ -9,9 +9,11 @@ import type { Cycle } from "../reconcile/runner.js";
 import { groupSettingsCycle } from "../cycles/group-settings.js";
 import { projectSettingsCycle } from "../cycles/project-settings.js";
 import { membersCycle } from "../cycles/members.js";
+import { protectedBranchesCycle } from "../cycles/protected-branches.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [groupSettingsCycle.name]: groupSettingsCycle,
   [projectSettingsCycle.name]: projectSettingsCycle,
   [membersCycle.name]: membersCycle,
+  [protectedBranchesCycle.name]: protectedBranchesCycle,
 };
