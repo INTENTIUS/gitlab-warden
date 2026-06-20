@@ -1,28 +1,44 @@
-import { describe, it, expect, vi } from "vitest";
-import { run } from "./cli.js";
+import { describe, it, expect } from "vitest";
+import { parseReconcileArgs, CliError } from "./cli.js";
 
-async function capture(argv: string[]): Promise<string> {
-  let out = "";
-  const spy = vi
-    .spyOn(process.stdout, "write")
-    .mockImplementation(((s: string | Uint8Array) => {
-      out += typeof s === "string" ? s : s.toString();
-      return true;
-    }) as typeof process.stdout.write);
-  await run(argv);
-  spy.mockRestore();
-  return out;
-}
-
-describe("gitlab-warden cli (preview)", () => {
-  it("prints usage by default", async () => {
-    const out = await capture([]);
-    expect(out).toContain("gitlab-warden");
-    expect(out).toContain("Early preview");
+describe("parseReconcileArgs", () => {
+  it("requires --config", () => {
+    expect(() => parseReconcileArgs([])).toThrow(CliError);
+    expect(() => parseReconcileArgs([])).toThrow(/--config is required/);
   });
 
-  it("--version prints a semver", async () => {
-    const out = await capture(["--version"]);
-    expect(out.trim()).toMatch(/^\d+\.\d+\.\d+$/);
+  it("defaults mode to dry-run and token env to GITLAB_TOKEN", () => {
+    const a = parseReconcileArgs(["--config", "g.yaml"]);
+    expect(a).toMatchObject({ config: "g.yaml", mode: "dry-run", tokenEnv: "GITLAB_TOKEN", cycles: [] });
+  });
+
+  it("parses all flags", () => {
+    const a = parseReconcileArgs([
+      "--config", "g.yaml",
+      "--mode", "apply",
+      "--cycles", "group-settings, members",
+      "--base-url", "https://gitlab.example.com",
+      "--token-env", "CI_TOKEN",
+      "--allow-guardrail-override",
+    ]);
+    expect(a).toMatchObject({
+      mode: "apply",
+      cycles: ["group-settings", "members"],
+      baseUrl: "https://gitlab.example.com",
+      tokenEnv: "CI_TOKEN",
+      allowGuardrailOverride: true,
+    });
+  });
+
+  it("rejects an unknown flag, bad mode, and missing value", () => {
+    expect(() => parseReconcileArgs(["--config", "g", "--nope"])).toThrow(/unknown flag/);
+    expect(() => parseReconcileArgs(["--config", "g", "--mode", "yolo"])).toThrow(/--mode must be/);
+    expect(() => parseReconcileArgs(["--config"])).toThrow(/--config requires a value/);
+  });
+
+  it("base URL stays optional (defaults to gitlab.com downstream)", () => {
+    const a = parseReconcileArgs(["--config", "g.yaml"]);
+    expect(a.baseUrl).toBeUndefined();
+    expect(a.baseUrlEnv).toBeUndefined();
   });
 });
