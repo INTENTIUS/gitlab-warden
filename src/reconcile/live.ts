@@ -168,6 +168,9 @@ export interface LiveNodeState {
   variables?: LiveVariable[];
   webhooks?: LiveWebhook[];
   integrations?: LiveIntegration[];
+  instanceSettings?: Record<string, unknown>;
+  systemHooks?: LiveWebhook[];
+  instanceVariables?: LiveVariable[];
   /** Names of existing children (for baseline provisioning). */
   children?: string[];
 }

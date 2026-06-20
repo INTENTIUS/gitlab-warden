@@ -86,6 +86,9 @@ const RESOURCE_TYPE_ORDER = [
   "variable",
   "webhook",
   "integration",
+  "instance-settings",
+  "instance-variable",
+  "system-hook",
 ] as const;
 
 export function diff(
@@ -112,6 +115,9 @@ export function diff(
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
   diffIntegrations(desired.integrations, live.integrations ?? [], opts, entries);
+  diffObject("instance-settings", desired.instanceSettings, live.instanceSettings, desired.instanceSettings ? Object.keys(desired.instanceSettings) : [], entries);
+  diffVariablesAs("instance-variable", desired.instanceVariables, live.instanceVariables ?? [], opts, entries);
+  diffWebhooksAs("system-hook", desired.systemHooks, live.systemHooks ?? [], opts, entries);
   diffBaselines(desired.baselines, live.children ?? [], entries);
 
   const typeIndex = (t: string): number => {
@@ -392,9 +398,19 @@ function diffVariables(
   opts: DiffOptions,
   out: ChangeSetEntry[],
 ): void {
+  diffVariablesAs("variable", desired, live, opts, out);
+}
+
+function diffVariablesAs(
+  resourceType: "variable" | "instance-variable",
+  desired: VariableConfig[] | undefined,
+  live: LiveVariable[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
   if (desired === undefined) return;
   diffCollection<VariableConfig, LiveVariable>({
-    resourceType: "variable",
+    resourceType,
     desired: new Map(desired.map((v) => [varKey(v.key, v.environmentScope), v])),
     live: new Map(live.map((v) => [varKey(v.key, v.environmentScope), v])),
     compareFields: (dv, lv) => {
@@ -422,9 +438,19 @@ function diffWebhooks(
   opts: DiffOptions,
   out: ChangeSetEntry[],
 ): void {
+  diffWebhooksAs("webhook", desired, live, opts, out);
+}
+
+function diffWebhooksAs(
+  resourceType: "webhook" | "system-hook",
+  desired: WebhookConfig[] | undefined,
+  live: LiveWebhook[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
   if (desired === undefined) return;
   diffCollection<WebhookConfig, LiveWebhook>({
-    resourceType: "webhook",
+    resourceType,
     desired: new Map(desired.map((w) => [w.url, w])),
     live: new Map(live.map((w) => [w.url, w])),
     compareFields: (dw, lw) =>
