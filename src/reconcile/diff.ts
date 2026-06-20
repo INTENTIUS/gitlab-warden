@@ -35,6 +35,7 @@ import type {
   ProtectedEnvironmentConfig,
   DeployKeyConfig,
   DeployTokenConfig,
+  AccessTokenConfig,
   PushRulesConfig,
   ApprovalRuleConfig,
   ApprovalSettings,
@@ -53,6 +54,7 @@ import type {
   LiveProtectedEnvironment,
   LiveDeployKey,
   LiveDeployToken,
+  LiveAccessToken,
   LivePushRules,
   LiveApprovalRule,
   LiveApprovalSettings,
@@ -78,6 +80,7 @@ const RESOURCE_TYPE_ORDER = [
   "protected-environment",
   "deploy-key",
   "deploy-token",
+  "access-token",
   "approval-rule",
   "variable",
   "webhook",
@@ -102,6 +105,7 @@ export function diff(
   diffProtectedEnvironments(desired.protectedEnvironments, live.protectedEnvironments ?? [], opts, entries);
   diffDeployKeys(desired.deployKeys, live.deployKeys ?? [], opts, entries);
   diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries);
+  diffAccessTokens(desired.accessTokens, live.accessTokens ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
@@ -325,6 +329,24 @@ function diffDeployTokens(
   // Tokens are immutable — reconciled by presence (create/delete only).
   diffCollection<DeployTokenConfig, LiveDeployToken>({
     resourceType: "deploy-token",
+    desired: new Map(desired.map((t) => [t.name, t])),
+    live: new Map(live.map((t) => [t.name, t])),
+    compareFields: () => [],
+    opts,
+    out,
+  });
+}
+
+function diffAccessTokens(
+  desired: AccessTokenConfig[] | undefined,
+  live: LiveAccessToken[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  // Access tokens are immutable — reconciled by presence (create/delete only).
+  diffCollection<AccessTokenConfig, LiveAccessToken>({
+    resourceType: "access-token",
     desired: new Map(desired.map((t) => [t.name, t])),
     live: new Map(live.map((t) => [t.name, t])),
     compareFields: () => [],

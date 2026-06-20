@@ -19,12 +19,14 @@ import { protectedTagsCycle } from "../cycles/protected-tags.js";
 import { protectedEnvironmentsCycle } from "../cycles/protected-environments.js";
 import { deployKeysTokensCycle } from "../cycles/deploy-keys-tokens.js";
 import { integrationsCycle } from "../cycles/integrations.js";
+import { accessTokensCycle } from "../cycles/access-tokens.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [protectedTagsCycle.name]: protectedTagsCycle,
   [protectedEnvironmentsCycle.name]: protectedEnvironmentsCycle,
   [deployKeysTokensCycle.name]: deployKeysTokensCycle,
   [integrationsCycle.name]: integrationsCycle,
+  [accessTokensCycle.name]: accessTokensCycle,
   [groupSettingsCycle.name]: groupSettingsCycle,
   [projectSettingsCycle.name]: projectSettingsCycle,
   [membersCycle.name]: membersCycle,

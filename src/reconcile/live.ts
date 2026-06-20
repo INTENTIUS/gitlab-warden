@@ -79,6 +79,16 @@ export interface LiveDeployToken {
   username?: string;
 }
 
+export interface LiveAccessToken {
+  /** Token id (apply path; never diffed). */
+  id?: number;
+  name: string;
+  scopes?: string[];
+  accessLevel?: number;
+  expiresAt?: string;
+  active?: boolean;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -146,6 +156,7 @@ export interface LiveNodeState {
   protectedEnvironments?: LiveProtectedEnvironment[];
   deployKeys?: LiveDeployKey[];
   deployTokens?: LiveDeployToken[];
+  accessTokens?: LiveAccessToken[];
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
