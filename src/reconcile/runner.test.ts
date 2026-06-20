@@ -17,6 +17,9 @@ const mockClient = (): GitLabClient => ({
   async paginate<T = unknown>(): Promise<T[]> {
     return [];
   },
+  async graphql<T = unknown>(): Promise<T> {
+    return {} as T;
+  },
 });
 
 /** A members cycle: fetchLive returns the given live; buildDesired passes members through. */
