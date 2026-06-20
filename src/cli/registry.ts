@@ -8,8 +8,10 @@
 import type { Cycle } from "../reconcile/runner.js";
 import { groupSettingsCycle } from "../cycles/group-settings.js";
 import { projectSettingsCycle } from "../cycles/project-settings.js";
+import { membersCycle } from "../cycles/members.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [groupSettingsCycle.name]: groupSettingsCycle,
   [projectSettingsCycle.name]: projectSettingsCycle,
+  [membersCycle.name]: membersCycle,
 };
