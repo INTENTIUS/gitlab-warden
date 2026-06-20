@@ -251,6 +251,20 @@ export interface ComplianceFrameworkConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Security policies (GraphQL; group/project; Ultimate)
+// ---------------------------------------------------------------------------
+
+/**
+ * Security policy linkage for a group/project — which security policy project is
+ * linked. The policy *content* (`.gitlab/security-policies/policy.yml`) lives in
+ * that project and is reconciled separately (deferred follow-up under #18).
+ */
+export interface SecurityPolicyConfig {
+  /** Full path of the linked security policy project (empty/unset → unlink). */
+  policyProject?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Advanced protections
 // ---------------------------------------------------------------------------
 
@@ -293,6 +307,7 @@ export interface NodeConfig {
   jobTokenScope?: JobTokenScopeConfig;
   memberRoles?: MemberRoleConfig[];
   complianceFrameworks?: ComplianceFrameworkConfig[];
+  securityPolicy?: SecurityPolicyConfig;
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];

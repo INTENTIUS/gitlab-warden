@@ -78,6 +78,7 @@ const RESOURCE_TYPE_ORDER = [
   "push-rules",
   "approval-settings",
   "job-token-scope",
+  "security-policy",
   "baseline",
   "member",
   "protected-branch",
@@ -110,6 +111,7 @@ export function diff(
   diffObject("push-rules", desired.pushRules, live.pushRules, PUSH_RULE_FIELDS, entries);
   diffObject("approval-settings", desired.approvalSettings, live.approvalSettings, APPROVAL_SETTING_FIELDS, entries);
   diffObject("job-token-scope", desired.jobTokenScope, live.jobTokenScope, ["inboundEnabled"], entries);
+  diffObject("security-policy", desired.securityPolicy, live.securityPolicy, ["policyProject"], entries);
   diffMembers(desired.members, live.members ?? [], opts, entries);
   diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
   diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
