@@ -19,12 +19,16 @@ log() { echo "[bootstrap] $*" >&2; }
 log "starting GitLab CE (this is slow)…"
 $COMPOSE up -d >&2
 
-log "waiting for /-/health (GitLab CE cold boot, be patient)…"
+# Poll the login page, not /-/health: the monitoring endpoints are IP-restricted
+# (monitoring_whitelist) and a host-side curl arrives via the Docker bridge gateway
+# (non-loopback) → 403. /users/sign_in is unauthenticated and ungated; it returns
+# 200 once GitLab's web stack is serving.
+log "waiting for the web UI (GitLab CE cold boot, be patient)…"
 for i in $(seq 1 300); do
-  if curl -fsS "${URL}/-/health" >/dev/null 2>&1; then log "healthy after ~$((i * 5))s"; break; fi
+  if curl -fsS -o /dev/null "${URL}/users/sign_in" 2>/dev/null; then log "serving after ~$((i * 5))s"; break; fi
   sleep 5
   if [ $((i % 24)) -eq 0 ]; then log "still booting… ~$((i * 5))s elapsed"; fi
-  if [ "$i" = "300" ]; then log "GitLab did not become healthy in ~25 min"; $COMPOSE logs --tail=80 >&2 || true; exit 1; fi
+  if [ "$i" = "300" ]; then log "GitLab did not start serving in ~25 min"; $COMPOSE logs --tail=80 >&2 || true; exit 1; fi
 done
 
 # Health can pass before the rails app fully accepts runner commands — retry.
