@@ -36,6 +36,7 @@ import type {
   DeployKeyConfig,
   DeployTokenConfig,
   AccessTokenConfig,
+  MemberRoleConfig,
   PushRulesConfig,
   ApprovalRuleConfig,
   ApprovalSettings,
@@ -55,6 +56,7 @@ import type {
   LiveDeployKey,
   LiveDeployToken,
   LiveAccessToken,
+  LiveMemberRole,
   LivePushRules,
   LiveApprovalRule,
   LiveApprovalSettings,
@@ -82,6 +84,7 @@ const RESOURCE_TYPE_ORDER = [
   "deploy-key",
   "deploy-token",
   "access-token",
+  "member-role",
   "approval-rule",
   "variable",
   "webhook",
@@ -111,6 +114,7 @@ export function diff(
   diffDeployKeys(desired.deployKeys, live.deployKeys ?? [], opts, entries);
   diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries);
   diffAccessTokens(desired.accessTokens, live.accessTokens ?? [], opts, entries);
+  diffMemberRoles(desired.memberRoles, live.memberRoles ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
@@ -347,6 +351,24 @@ function diffAccessTokens(
     resourceType: "access-token",
     desired: new Map(desired.map((t) => [t.name, t])),
     live: new Map(live.map((t) => [t.name, t])),
+    compareFields: () => [],
+    opts,
+    out,
+  });
+}
+
+function diffMemberRoles(
+  desired: MemberRoleConfig[] | undefined,
+  live: LiveMemberRole[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  // Custom roles reconciled by presence (create/delete) — keyed by name.
+  diffCollection<MemberRoleConfig, LiveMemberRole>({
+    resourceType: "member-role",
+    desired: new Map(desired.map((r) => [r.name, r])),
+    live: new Map(live.map((r) => [r.name, r])),
     compareFields: () => [],
     opts,
     out,
