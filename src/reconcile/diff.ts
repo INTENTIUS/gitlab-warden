@@ -37,6 +37,7 @@ import type {
   DeployTokenConfig,
   AccessTokenConfig,
   MemberRoleConfig,
+  ComplianceFrameworkConfig,
   PushRulesConfig,
   ApprovalRuleConfig,
   ApprovalSettings,
@@ -57,6 +58,7 @@ import type {
   LiveDeployToken,
   LiveAccessToken,
   LiveMemberRole,
+  LiveComplianceFramework,
   LivePushRules,
   LiveApprovalRule,
   LiveApprovalSettings,
@@ -85,6 +87,7 @@ const RESOURCE_TYPE_ORDER = [
   "deploy-token",
   "access-token",
   "member-role",
+  "compliance-framework",
   "approval-rule",
   "variable",
   "webhook",
@@ -115,6 +118,7 @@ export function diff(
   diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries);
   diffAccessTokens(desired.accessTokens, live.accessTokens ?? [], opts, entries);
   diffMemberRoles(desired.memberRoles, live.memberRoles ?? [], opts, entries);
+  diffComplianceFrameworks(desired.complianceFrameworks, live.complianceFrameworks ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
@@ -370,6 +374,24 @@ function diffMemberRoles(
     desired: new Map(desired.map((r) => [r.name, r])),
     live: new Map(live.map((r) => [r.name, r])),
     compareFields: () => [],
+    opts,
+    out,
+  });
+}
+
+function diffComplianceFrameworks(
+  desired: ComplianceFrameworkConfig[] | undefined,
+  live: LiveComplianceFramework[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<ComplianceFrameworkConfig, LiveComplianceFramework>({
+    resourceType: "compliance-framework",
+    desired: new Map(desired.map((f) => [f.name, f])),
+    live: new Map(live.map((f) => [f.name, f])),
+    compareFields: (df, lf) =>
+      diffFields(df as unknown as Record<string, unknown>, lf as unknown as Record<string, unknown>, ["description", "color", "pipelineConfigurationFullPath"]),
     opts,
     out,
   });
