@@ -119,6 +119,11 @@ export interface LiveVariable {
   variableType?: string;
 }
 
+export interface LiveIntegration {
+  name: string;
+  active?: boolean;
+}
+
 export interface LiveWebhook {
   /** Hook id (apply path; never diffed). */
   id?: number;
@@ -146,6 +151,7 @@ export interface LiveNodeState {
   approvalSettings?: LiveApprovalSettings;
   variables?: LiveVariable[];
   webhooks?: LiveWebhook[];
+  integrations?: LiveIntegration[];
   /** Names of existing children (for baseline provisioning). */
   children?: string[];
 }

@@ -40,6 +40,7 @@ import type {
   ApprovalSettings,
   VariableConfig,
   WebhookConfig,
+  IntegrationConfig,
   BaselineConfig,
 } from "../config/types.js";
 import type {
@@ -57,6 +58,7 @@ import type {
   LiveApprovalSettings,
   LiveVariable,
   LiveWebhook,
+  LiveIntegration,
 } from "./live.js";
 import { toAccessNumber } from "../config/access-levels.js";
 
@@ -79,6 +81,7 @@ const RESOURCE_TYPE_ORDER = [
   "approval-rule",
   "variable",
   "webhook",
+  "integration",
 ] as const;
 
 export function diff(
@@ -102,6 +105,7 @@ export function diff(
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
+  diffIntegrations(desired.integrations, live.integrations ?? [], opts, entries);
   diffBaselines(desired.baselines, live.children ?? [], entries);
 
   const typeIndex = (t: string): number => {
@@ -411,6 +415,28 @@ function diffWebhooks(
     live: new Map(live.map((w) => [w.url, w])),
     compareFields: (dw, lw) =>
       diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS),
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Integrations (presence + active; properties are write-only, not diffed)
+// ---------------------------------------------------------------------------
+
+function diffIntegrations(
+  desired: IntegrationConfig[] | undefined,
+  live: LiveIntegration[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<IntegrationConfig, LiveIntegration>({
+    resourceType: "integration",
+    desired: new Map(desired.map((i) => [i.name, i])),
+    live: new Map(live.map((i) => [i.name, i])),
+    compareFields: (di, li) =>
+      di.active !== undefined && di.active !== li.active ? [{ field: "active", before: li.active, after: di.active }] : [],
     opts,
     out,
   });

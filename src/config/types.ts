@@ -180,6 +180,22 @@ export interface VariableConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Integrations (generic)
+// ---------------------------------------------------------------------------
+
+/**
+ * A group/project integration (Slack, Jira, …), modeled generically so any
+ * integration is reconcilable without per-service code. Keyed by `name` (the
+ * GitLab integration slug). `properties` are write-only (GitLab masks them), so
+ * property-only drift isn't detected — presence/active is reconciled.
+ */
+export interface IntegrationConfig {
+  name: string;
+  active?: boolean;
+  properties?: Record<string, unknown>;
+}
+
+// ---------------------------------------------------------------------------
 // Webhooks
 // ---------------------------------------------------------------------------
 
@@ -237,6 +253,7 @@ export interface NodeConfig {
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];
   webhooks?: WebhookConfig[];
+  integrations?: IntegrationConfig[];
   baselines?: BaselineConfig[];
 }
 
