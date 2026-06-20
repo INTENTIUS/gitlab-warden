@@ -32,6 +32,7 @@ import type {
   MemberConfig,
   ProtectedBranchConfig,
   ProtectedTagConfig,
+  ProtectedEnvironmentConfig,
   PushRulesConfig,
   ApprovalRuleConfig,
   ApprovalSettings,
@@ -46,6 +47,7 @@ import type {
   LiveMember,
   LiveProtectedBranch,
   LiveProtectedTag,
+  LiveProtectedEnvironment,
   LivePushRules,
   LiveApprovalRule,
   LiveApprovalSettings,
@@ -67,6 +69,7 @@ const RESOURCE_TYPE_ORDER = [
   "member",
   "protected-branch",
   "protected-tag",
+  "protected-environment",
   "approval-rule",
   "variable",
   "webhook",
@@ -87,6 +90,7 @@ export function diff(
   diffMembers(desired.members, live.members ?? [], opts, entries);
   diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
   diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
+  diffProtectedEnvironments(desired.protectedEnvironments, live.protectedEnvironments ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
@@ -252,6 +256,31 @@ function diffProtectedTags(
     live: new Map(live.map((t) => [t.name, t])),
     compareFields: (dt, lt) =>
       diffFields(dt as unknown as Record<string, unknown>, lt as unknown as Record<string, unknown>, ["createAccessLevel"]),
+    opts,
+    out,
+  });
+}
+
+function diffProtectedEnvironments(
+  desired: ProtectedEnvironmentConfig[] | undefined,
+  live: LiveProtectedEnvironment[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<ProtectedEnvironmentConfig, LiveProtectedEnvironment>({
+    resourceType: "protected-environment",
+    desired: new Map(desired.map((e) => [e.name, e])),
+    live: new Map(live.map((e) => [e.name, e])),
+    compareFields: (de, le) => {
+      const fields = diffFields(de as unknown as Record<string, unknown>, le as unknown as Record<string, unknown>, ["requiredApprovalCount"]);
+      if (de.deployAccessLevels !== undefined) {
+        const a = [...de.deployAccessLevels].sort().join(",");
+        const b = [...(le.deployAccessLevels ?? [])].sort().join(",");
+        if (a !== b) fields.push({ field: "deployAccessLevels", before: le.deployAccessLevels ?? [], after: de.deployAccessLevels });
+      }
+      return fields;
+    },
     opts,
     out,
   });

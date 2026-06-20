@@ -57,6 +57,12 @@ export interface LiveProtectedTag {
   createAccessLevel?: number;
 }
 
+export interface LiveProtectedEnvironment {
+  name: string;
+  deployAccessLevels?: number[];
+  requiredApprovalCount?: number;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -116,6 +122,7 @@ export interface LiveNodeState {
   members?: LiveMember[];
   protectedBranches?: LiveProtectedBranch[];
   protectedTags?: LiveProtectedTag[];
+  protectedEnvironments?: LiveProtectedEnvironment[];
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
