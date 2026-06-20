@@ -14,6 +14,7 @@ import { pushRulesCycle } from "../cycles/push-rules.js";
 import { ciVariablesCycle } from "../cycles/ci-variables.js";
 import { webhooksCycle } from "../cycles/webhooks.js";
 import { baselineCycle } from "../cycles/baseline.js";
+import { mrApprovalsCycle } from "../cycles/mr-approvals.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [groupSettingsCycle.name]: groupSettingsCycle,
@@ -24,4 +25,5 @@ export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [ciVariablesCycle.name]: ciVariablesCycle,
   [webhooksCycle.name]: webhooksCycle,
   [baselineCycle.name]: baselineCycle,
+  [mrApprovalsCycle.name]: mrApprovalsCycle,
 };
