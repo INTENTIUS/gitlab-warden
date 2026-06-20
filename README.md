@@ -1,5 +1,8 @@
 # gitlab-warden
 
+[![ci](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/ci.yml/badge.svg)](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/ci.yml)
+[![e2e](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/e2e.yml/badge.svg)](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/e2e.yml)
+
 Declarative governance for GitLab **groups & projects** — the whole surface, in one lightweight tool you run in CI.
 
 The third [warden](https://github.com/INTENTIUS/github-warden), built on the shared
@@ -10,10 +13,6 @@ behind [github-warden](https://github.com/INTENTIUS/github-warden) and
 supplies the GitLab layer: a REST + GraphQL client (configurable host for
 self-managed + GitLab.com), config + live-state types, a GitLab `diff()`, and the
 reconcile cycles.
-
-> 🚧 **Preview published; engine in progress.** `@intentius/gitlab-warden@0.1.0` is a
-> placeholder that establishes the package + release pipeline. The reconcile engine
-> is being built per the [roadmap epic](https://github.com/INTENTIUS/gitlab-warden/issues/21).
 
 ## What it is
 
@@ -48,7 +47,51 @@ sharpest single example of the model, but warden goes after the *entire* surface
 | **Instance** (self-managed) | application settings · instance CI/CD variables · system hooks · custom member roles |
 
 REST for most of it; **GraphQL** for the few surfaces that require it (compliance
-frameworks, security-policy attachment, custom roles).
+frameworks, security-policy attachment). The Ultimate-only GraphQL cycles are
+best-effort (unvalidated against a live Ultimate instance — the e2e runs CE).
+
+## Usage
+
+```sh
+npx @intentius/gitlab-warden reconcile \
+  --config governance.yaml \
+  --mode dry-run \
+  --token-env GITLAB_TOKEN \
+  --base-url https://gitlab.example.com   # omit for gitlab.com
+```
+
+```yaml
+# governance.yaml — declared nodes, keyed by full path
+nodes:
+  acme/platform:
+    kind: group
+    groupSettings: { description: "Platform team", visibility: private }
+    members:
+      - { user: alice, accessLevel: owner }
+    pushRules: { preventSecrets: true }
+  acme/platform/api:
+    kind: project
+    projectSettings: { mergeMethod: ff, topics: [go, service] }
+    protectedBranches:
+      - { name: main, pushAccessLevel: 40, mergeAccessLevel: 30 }
+```
+
+`--mode dry-run` (default) prints the plan; `--mode apply` converges it. Guardrails
+block a mass-delete and tier-gated (Premium/Ultimate) endpoints that 403 are
+reported and skipped, never fatal.
+
+## Tests
+
+`npm test` runs the unit suite (mock-client, fully offline). The [e2e suite](e2e/)
+is **fully hermetic** — it stands up GitLab CE via Docker Compose, mints a token,
+provisions its own group/project, exercises every cycle, and tears down (no
+external account or secrets):
+
+```sh
+eval "$(npm run --silent e2e:up)"   # compose up + mint token (GitLab CE is slow)
+npm run test:e2e:run
+npm run e2e:down
+```
 
 ## The one genuinely hard part
 
