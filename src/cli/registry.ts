@@ -23,9 +23,11 @@ import { accessTokensCycle } from "../cycles/access-tokens.js";
 import { advancedProtectionsCycle } from "../cycles/advanced-protections.js";
 import { instanceGovernanceCycle } from "../cycles/instance-governance.js";
 import { memberRolesCycle } from "../cycles/member-roles.js";
+import { complianceFrameworksCycle } from "../cycles/compliance-frameworks.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [memberRolesCycle.name]: memberRolesCycle,
+  [complianceFrameworksCycle.name]: complianceFrameworksCycle,
   [protectedTagsCycle.name]: protectedTagsCycle,
   [protectedEnvironmentsCycle.name]: protectedEnvironmentsCycle,
   [deployKeysTokensCycle.name]: deployKeysTokensCycle,

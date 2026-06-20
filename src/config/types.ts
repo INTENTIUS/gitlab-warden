@@ -237,6 +237,20 @@ export interface BaselineConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Compliance frameworks (GraphQL; group nodes; Premium/Ultimate)
+// ---------------------------------------------------------------------------
+
+/** A compliance framework defined on a top-level group. Keyed by name. */
+export interface ComplianceFrameworkConfig {
+  name: string;
+  description?: string;
+  /** Hex colour, e.g. "#1aaa55". */
+  color?: string;
+  /** Path to the enforced pipeline configuration ("file@group/project"). */
+  pipelineConfigurationFullPath?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Advanced protections
 // ---------------------------------------------------------------------------
 
@@ -278,6 +292,7 @@ export interface NodeConfig {
   pushRules?: PushRulesConfig;
   jobTokenScope?: JobTokenScopeConfig;
   memberRoles?: MemberRoleConfig[];
+  complianceFrameworks?: ComplianceFrameworkConfig[];
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];

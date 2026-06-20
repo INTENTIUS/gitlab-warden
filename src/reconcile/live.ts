@@ -101,6 +101,15 @@ export interface LiveMemberRole {
   permissions?: string[];
 }
 
+export interface LiveComplianceFramework {
+  /** GraphQL global id (apply path; never diffed). */
+  id?: string;
+  name: string;
+  description?: string;
+  color?: string;
+  pipelineConfigurationFullPath?: string;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -171,6 +180,7 @@ export interface LiveNodeState {
   accessTokens?: LiveAccessToken[];
   jobTokenScope?: LiveJobTokenScope;
   memberRoles?: LiveMemberRole[];
+  complianceFrameworks?: LiveComplianceFramework[];
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
