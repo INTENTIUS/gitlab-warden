@@ -47,6 +47,8 @@ export interface GitLabClient {
   request<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
   /** Collect every page of a list endpoint (follows `X-Next-Page`). 404 → []. */
   paginate<T = unknown>(path: string, perPage?: number): Promise<T[]>;
+  /** Execute a GraphQL query/mutation against `<baseUrl>/api/graphql`. Returns `data`. */
+  graphql<T = unknown>(query: string, variables?: Record<string, unknown>): Promise<T>;
 }
 
 /** URL-encode a group/project id or full path for use in a request path. */
@@ -57,7 +59,9 @@ export function encodeId(idOrPath: string | number): string {
 /** Returns a thin authed REST client for a GitLab instance. */
 export function createClient(opts: GitLabClientOptions): GitLabClient {
   const doFetch = opts.fetchImpl ?? fetch;
-  const root = `${(opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "")}${API_PATH}`;
+  const baseClean = (opts.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
+  const root = `${baseClean}${API_PATH}`;
+  const graphqlUrl = `${baseClean}/api/graphql`;
 
   async function raw(
     method: string,
@@ -132,6 +136,34 @@ export function createClient(opts: GitLabClientOptions): GitLabClient {
         page = n;
       }
       return out;
+    },
+
+    async graphql<T = unknown>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+      let res: Response;
+      try {
+        res = await doFetch(graphqlUrl, {
+          method: "POST",
+          headers: {
+            "PRIVATE-TOKEN": opts.token,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "User-Agent": USER_AGENT,
+          },
+          redirect: "manual",
+          body: JSON.stringify({ query, variables }),
+        });
+      } catch (err) {
+        throw new GitLabApiError(`network error on GraphQL: ${err instanceof Error ? err.message : String(err)}`);
+      }
+      if (!res.ok) {
+        throw new GitLabApiError(`GraphQL returned ${res.status}`, res.status);
+      }
+      const text = await res.text();
+      const parsed = text ? (JSON.parse(text) as { data?: T; errors?: Array<{ message?: string }> }) : {};
+      if (parsed.errors && parsed.errors.length > 0) {
+        throw new GitLabApiError(`GraphQL error: ${parsed.errors.map((e) => e.message ?? "?").join("; ")}`);
+      }
+      return (parsed.data ?? {}) as T;
     },
   };
 }

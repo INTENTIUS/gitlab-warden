@@ -90,6 +90,22 @@ describe("createClient.paginate", () => {
   });
 });
 
+describe("createClient.graphql", () => {
+  it("POSTs to /api/graphql and returns data", async () => {
+    const { impl, calls } = fakeFetch([{ body: { data: { group: { id: "gid://1" } } } }]);
+    const client = createClient({ baseUrl: "https://gitlab.example.com", token: "t", fetchImpl: impl });
+    const data = await client.graphql<{ group: { id: string } }>("query G { group { id } }", { full: "acme" });
+    expect(data.group.id).toBe("gid://1");
+    expect(calls[0]!.url).toBe("https://gitlab.example.com/api/graphql");
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ query: "query G { group { id } }", variables: { full: "acme" } });
+  });
+  it("throws on GraphQL errors", async () => {
+    const { impl } = fakeFetch([{ body: { errors: [{ message: "boom" }] } }]);
+    const client = createClient({ token: "t", fetchImpl: impl });
+    await expect(client.graphql("mutation M { x }")).rejects.toThrow(/GraphQL error: boom/);
+  });
+});
+
 describe("encodeId", () => {
   it("URL-encodes full paths", () => {
     expect(encodeId("acme/platform/api")).toBe("acme%2Fplatform%2Fapi");

@@ -26,10 +26,12 @@ export interface MockClient extends GitLabClient {
 export function makeClient(
   responses: Record<string, unknown | ((body: unknown) => unknown)> = {},
   pages: Record<string, unknown[]> = {},
+  graphqlResponses: Record<string, unknown | ((vars: Record<string, unknown>) => unknown)> = {},
 ): MockClient {
   const calls: MockCall[] = [];
   const rmap = new Map(Object.entries(responses));
   const pmap = new Map(Object.entries(pages));
+  const gmap = new Map(Object.entries(graphqlResponses));
   return {
     calls,
     async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
@@ -41,6 +43,15 @@ export function makeClient(
     async paginate<T = unknown>(path: string): Promise<T[]> {
       calls.push({ method: "PAGINATE", path });
       return (pmap.get(path) ?? []) as T[];
+    },
+    async graphql<T = unknown>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+      calls.push({ method: "GRAPHQL", path: query, body: variables });
+      // Match by the first operation/field name found in the query for convenience.
+      const opMatch = query.match(/\b(query|mutation)\s+(\w+)/) ?? query.match(/\{\s*(\w+)/);
+      const keyOp = opMatch ? opMatch[opMatch.length - 1]! : "";
+      const hit = gmap.get(keyOp) ?? gmap.get(query);
+      const val = typeof hit === "function" ? (hit as (v: Record<string, unknown>) => unknown)(variables) : hit;
+      return (val === undefined ? {} : val) as T;
     },
   };
 }
