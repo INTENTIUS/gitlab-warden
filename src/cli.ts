@@ -21,6 +21,10 @@ import { createClient } from "./auth/client.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
 import { CYCLE_REGISTRY } from "./cli/registry.js";
 import type { GovernanceConfig } from "./config/types.js";
+import pkg from "../package.json" with { type: "json" };
+
+/** Inlined from package.json at build time — always matches the published version. */
+const VERSION: string = pkg.version;
 
 export class CliError extends Error {
   constructor(
@@ -226,7 +230,7 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
     process.exit(0);
   }
   if (sub === "--version" || sub === "-v") {
-    process.stdout.write("0.1.0\n");
+    process.stdout.write(`${VERSION}\n`);
     process.exit(0);
   }
   if (sub === "reconcile") {
