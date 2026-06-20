@@ -110,6 +110,10 @@ export interface LiveComplianceFramework {
   pipelineConfigurationFullPath?: string;
 }
 
+export interface LiveSecurityPolicy {
+  policyProject?: string;
+}
+
 export interface LivePushRules {
   commitMessageRegex?: string;
   commitMessageNegativeRegex?: string;
@@ -181,6 +185,7 @@ export interface LiveNodeState {
   jobTokenScope?: LiveJobTokenScope;
   memberRoles?: LiveMemberRole[];
   complianceFrameworks?: LiveComplianceFramework[];
+  securityPolicy?: LiveSecurityPolicy;
   pushRules?: LivePushRules;
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
