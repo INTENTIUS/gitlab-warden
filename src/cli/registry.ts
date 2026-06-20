@@ -21,6 +21,7 @@ import { deployKeysTokensCycle } from "../cycles/deploy-keys-tokens.js";
 import { integrationsCycle } from "../cycles/integrations.js";
 import { accessTokensCycle } from "../cycles/access-tokens.js";
 import { advancedProtectionsCycle } from "../cycles/advanced-protections.js";
+import { instanceGovernanceCycle } from "../cycles/instance-governance.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [protectedTagsCycle.name]: protectedTagsCycle,
@@ -29,6 +30,7 @@ export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [integrationsCycle.name]: integrationsCycle,
   [accessTokensCycle.name]: accessTokensCycle,
   [advancedProtectionsCycle.name]: advancedProtectionsCycle,
+  [instanceGovernanceCycle.name]: instanceGovernanceCycle,
   [groupSettingsCycle.name]: groupSettingsCycle,
   [projectSettingsCycle.name]: projectSettingsCycle,
   [membersCycle.name]: membersCycle,

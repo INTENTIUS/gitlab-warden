@@ -12,7 +12,7 @@
  * scope; cycles add their own slices to `NodeConfig` as they land.
  */
 
-export type NodeKind = "group" | "project";
+export type NodeKind = "group" | "project" | "instance";
 
 // ---------------------------------------------------------------------------
 // Access levels (see DESIGN.md §2)
@@ -275,6 +275,12 @@ export interface NodeConfig {
   webhooks?: WebhookConfig[];
   integrations?: IntegrationConfig[];
   baselines?: BaselineConfig[];
+  /** Instance application settings (self-managed) — generic passthrough of GitLab `application_settings` keys. */
+  instanceSettings?: Record<string, unknown>;
+  /** Instance system hooks (self-managed). */
+  systemHooks?: WebhookConfig[];
+  /** Instance CI/CD variables (self-managed). */
+  instanceVariables?: VariableConfig[];
 }
 
 /** Top-level governance config: the declared nodes, keyed by full path. */
