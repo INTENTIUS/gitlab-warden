@@ -45,8 +45,8 @@ weight, covering the **full** GitLab governance surface in one place:
 GitLab push rules aren't version-controlled and their inheritance is **broken** —
 copied at project creation, never propagated; change a group rule and existing
 projects don't get it (each fixed by hand). A reconcile loop that re-asserts
-declared push rules across a whole group tree fixes that, continuously. It's the
-sharpest single example of the model, but warden goes after the *entire* surface.
+declared push rules across a whole group tree fixes that, continuously — one clear
+example of the model, which warden applies across the *entire* governance surface.
 
 ## Coverage (the full surface)
 
@@ -103,14 +103,14 @@ npm run test:e2e:run
 npm run e2e:down
 ```
 
-## The one genuinely hard part
+## Inheritance-aware membership
 
 GitLab is a *tree* (nested groups, inherited membership), not a flat org. Membership
-must diff against **direct** members (`/members`) while *reading* effective members
-(`/members/all`), and must **never** treat an inherited member as deletable drift
-(the DELETE fails — the grant lives at an ancestor). This is the credibility gate;
-it gets a dedicated design issue (#3) that the members cycle implements against.
-Everything else is a straightforward cycle on the shared harness.
+is diffed against **direct** members (`/members`) while effective members
+(`/members/all`) are read for context only — an inherited member is **never** treated
+as deletable drift (the DELETE would fail, since the grant lives at an ancestor). The
+[scope and inheritance model](DESIGN.md) documents the rules the membership cycle
+follows.
 
 ## How it relates to the sibling wardens
 

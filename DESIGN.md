@@ -1,17 +1,16 @@
 # Design: hierarchy, scope model & inheritance-aware ownership
 
-This is the load-bearing design decision for gitlab-warden (issue #3). GitLab is a
-**tree** (nested groups, inherited membership), not a flat org like GitHub/Forgejo.
-A naive set-diff would try to delete inherited members and fail. The rules below are
-what the config/types (#4), `diff()` (#5), and the members cycle (#9) implement
-against.
+GitLab is a **tree** (nested groups, inherited membership), not a flat org like
+GitHub/Forgejo. A naive set-diff would try to delete inherited members and fail. This
+document defines the scope model and inheritance rules that the config/types, `diff()`,
+and the membership cycle follow.
 
-The single question this doc must answer unambiguously:
+The central question it resolves:
 
 > **Given a member that appears live at node X, is it a delete candidate?**
 
-Answer, up front: **only if it is a _direct_ membership at node X _and_ it is not in
-the desired config _and_ it is owned (`opts.isOwned`).** An inherited or
+A member is a delete candidate **only if it is a _direct_ membership at node X, it is
+not in the desired config, and it is owned (`opts.isOwned`).** An inherited or
 shared-group membership is never a delete candidate at a child node.
 
 ---
@@ -36,12 +35,12 @@ the operator never named).
 - Config keys are human-readable **full paths**; warden resolves a path → numeric id
   where the API needs it (members, hooks, approval rules carry numeric ids).
 - A renamed or transferred node (path no longer resolves) is treated as
-  **not-found → no-op + warn**, never as a delete. We don't thrash on drift we
+  **not-found → no-op + warn**, never as a delete. warden does not thrash on drift it
   didn't cause.
 
 ---
 
-## 2. Membership: direct vs inherited (the crux)
+## 2. Membership: direct vs inherited
 
 GitLab exposes two member rosters per group/project:
 
@@ -80,52 +79,50 @@ Numeric scheme (name ↔ number), current as of GitLab 17.x–18.x:
 
 `60` (Admin) is only valid in a group *update* context; `25` (Security Manager)
 appears in the access-token context. Config accepts either the name or the number;
-warden maps to the number for the API. A custom **member role** (Ultimate, issue
-#27) is referenced by id alongside a `base_access_level`.
+warden maps to the number for the API. A custom **member role** (Ultimate) is
+referenced by id alongside a `base_access_level`.
 
 ### Access-level drift
 A direct member whose live `access_level` differs from desired is an **update**
 (`PUT .../members/:user_id`), not a delete+create. A child may *raise* an inherited
 level via a direct membership but **cannot set a lower level than inherited** — if
-config asks for a lower level than the inherited floor, that's a no-op the cycle
-should detect and warn on, not an error loop.
+config asks for a lower level than the inherited floor, that is a no-op the cycle
+detects and warns on, not an error loop.
 
 ### Removal semantics
 - Node-level removal = `DELETE` a **direct** member at that node only.
 - Subtree-wide purge (top-group `DELETE /groups/:id/billable_members/:user_id`) is
-  **out of scope** — documented non-goal. warden reconciles per declared node, not
+  **out of scope** — a documented non-goal. warden reconciles per declared node, not
   across the whole billable surface.
 
 ---
 
 ## 3. Hierarchy mechanics
 
-- **Nesting:** subgroups up to ~20 levels deep (platform limit; verify per target
+- **Nesting:** subgroups up to ~20 levels deep (platform limit; confirm per target
   version). warden never needs the full tree — only the declared nodes — so depth is
-  not a traversal concern except for the `baseline` provisioning cycle (#15), which
-  may create intermediate subgroups.
+  not a traversal concern except for the `baseline` provisioning cycle, which may
+  create intermediate subgroups.
 - **Enumeration (only where a cycle needs siblings):** `GET /groups/:id/subgroups`
   (direct children) or `descendant_groups` (whole subtree), `GET
-  /groups/:id/projects` for projects. All paginated (keyset for large trees — see
-  the client, #2).
+  /groups/:id/projects` for projects. All paginated (keyset for large trees).
 - **Transfer:** `POST /groups/:id/transfer` can reparent a node, changing its
   inherited membership out from under config. warden treats this as drift to report,
   not to fight (see §1).
 
 ---
 
-## 4. What this means for each consumer
+## 4. Component responsibilities
 
-- **types (#4):** config is a node-keyed map; `MemberConfig` carries `{ user,
+- **types:** config is a node-keyed map; `MemberConfig` carries `{ user,
   accessLevel | memberRoleId }`. Live mirrors carry numeric ids (never diffed).
-- **diff (#5):** members are diffed against the **direct** roster; deletes are
+- **diff:** members are diffed against the **direct** roster; deletes are
   ownership-gated; inherited members never produce entries. Access-level drift →
-  update. Provide a unit test that proves an inherited-only member yields **no**
-  change entry.
-- **members cycle (#9):** `fetchLive` reads `/members` (direct). `apply` does
-  `POST`/`PUT`/`DELETE .../members/:user_id`. Never deletes anything not in the
+  update. A unit test asserts that an inherited-only member yields **no** change entry.
+- **members cycle:** `fetchLive` reads `/members` (direct). `apply` does
+  `POST`/`PUT`/`DELETE .../members/:user_id`. It never deletes anything not in the
   direct roster.
-- **runner (#6):** scopes = the declared nodes; a node's kind selects group vs
+- **runner:** scopes = the declared nodes; a node's kind selects group vs
   project endpoints.
 
 ---
