@@ -5,6 +5,16 @@
 
 Declarative governance for GitLab **groups & projects** — the whole surface, in one lightweight tool you run in CI.
 
+## Install
+
+```bash
+# Dry-run — reads only, prints a plan, changes nothing.
+npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
+```
+
+Installs the `gitlab-warden` CLI. Add `--base-url` for self-managed (defaults to
+gitlab.com). Full config + flags in [Usage](#usage) below.
+
 The third [warden](https://github.com/INTENTIUS/github-warden), built on the shared
 provider-agnostic reconcile primitive in
 [`@intentius/chant/reconcile`](https://github.com/INTENTIUS/chant) — the same core
