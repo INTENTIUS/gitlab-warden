@@ -69,6 +69,7 @@ export function buildGroupBody(d: GroupSettings): Record<string, unknown> {
 
 export const groupSettingsCycle: Cycle<GroupSettingsScope> = {
   name: "group-settings",
+  verb: "org-unit",
 
   async fetchLive(
     client: GitLabClient,

@@ -54,6 +54,7 @@ async function resolveUserId(client: GitLabClient, user: string | number, budget
 
 export const membersCycle: Cycle<MembersScope> = {
   name: "members",
+  verb: "membership",
 
   async fetchLive(
     client: GitLabClient,

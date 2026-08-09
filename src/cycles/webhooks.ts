@@ -68,6 +68,7 @@ function resourceFor(scopeId: string): { base: string } {
 
 export const webhooksCycle: Cycle<WebhooksScope> = {
   name: "webhooks",
+  verb: "audit-sink",
 
   async fetchLive(
     client: GitLabClient,

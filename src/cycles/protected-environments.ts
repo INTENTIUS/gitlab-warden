@@ -49,6 +49,7 @@ function resourceFor(scopeId: string): { base: string } {
 
 export const protectedEnvironmentsCycle: Cycle<ProtectedEnvironmentsScope> = {
   name: "protected-environments",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

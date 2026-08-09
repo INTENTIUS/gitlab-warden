@@ -45,6 +45,7 @@ interface NodeResult {
 
 export const securityPoliciesCycle: Cycle<SecurityPoliciesScope> = {
   name: "security-policies",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

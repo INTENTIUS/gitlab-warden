@@ -64,6 +64,7 @@ export function buildBranchBody(d: ProtectedBranchConfig): Record<string, unknow
 
 export const protectedBranchesCycle: Cycle<ProtectedBranchesScope> = {
   name: "protected-branches",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

@@ -53,6 +53,7 @@ function frameworkParams(d: ComplianceFrameworkConfig): Record<string, unknown> 
 
 export const complianceFrameworksCycle: Cycle<ComplianceFrameworksScope> = {
   name: "compliance-frameworks",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,
