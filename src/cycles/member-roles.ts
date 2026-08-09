@@ -48,6 +48,7 @@ function baseFor(scopeId: string): string | null {
 
 export const memberRolesCycle: Cycle<MemberRolesScope> = {
   name: "member-roles",
+  verb: "membership",
 
   async fetchLive(
     client: GitLabClient,

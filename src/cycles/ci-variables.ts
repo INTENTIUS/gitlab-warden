@@ -65,6 +65,7 @@ function resolveValue(d: VariableConfig): string {
 
 export const ciVariablesCycle: Cycle<CiVariablesScope> = {
   name: "ci-variables",
+  verb: "secret-material",
 
   async fetchLive(
     client: GitLabClient,

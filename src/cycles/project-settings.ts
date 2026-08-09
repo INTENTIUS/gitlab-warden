@@ -65,6 +65,7 @@ export function buildProjectBody(d: ProjectSettings): Record<string, unknown> {
 
 export const projectSettingsCycle: Cycle<ProjectSettingsScope> = {
   name: "project-settings",
+  verb: "org-unit",
 
   async fetchLive(
     client: GitLabClient,

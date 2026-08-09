@@ -51,6 +51,7 @@ function base(scopeId: string): string {
 
 export const accessTokensCycle: Cycle<AccessTokensScope> = {
   name: "access-tokens",
+  verb: "identity-assignment",
 
   async fetchLive(
     client: GitLabClient,

@@ -77,6 +77,7 @@ async function tolerantPaginate<T>(client: GitLabClient, path: string): Promise<
 
 export const instanceGovernanceCycle: Cycle<InstanceGovernanceScope> = {
   name: "instance-governance",
+  verb: "org-unit",
 
   async fetchLive(
     client: GitLabClient,

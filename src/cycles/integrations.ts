@@ -36,6 +36,7 @@ function resourceFor(scopeId: string): { base: string } {
 
 export const integrationsCycle: Cycle<IntegrationsScope> = {
   name: "integrations",
+  verb: "audit-sink",
 
   async fetchLive(
     client: GitLabClient,

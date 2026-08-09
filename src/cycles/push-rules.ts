@@ -81,6 +81,7 @@ function resourceFor(scopeId: string): { base: string } {
 
 export const pushRulesCycle: Cycle<PushRulesScope> = {
   name: "push-rules",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

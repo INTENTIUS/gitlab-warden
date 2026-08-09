@@ -28,6 +28,7 @@ interface GlChild {
 
 export const baselineCycle: Cycle<BaselineScope> = {
   name: "baseline",
+  verb: "org-unit",
 
   async fetchLive(
     client: GitLabClient,

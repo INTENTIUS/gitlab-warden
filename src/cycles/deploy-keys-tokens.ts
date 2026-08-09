@@ -56,6 +56,7 @@ function tokenBase(scopeId: string): string {
 
 export const deployKeysTokensCycle: Cycle<DeployKeysTokensScope> = {
   name: "deploy-keys-tokens",
+  verb: "identity-assignment",
 
   async fetchLive(
     client: GitLabClient,

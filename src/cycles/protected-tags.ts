@@ -41,6 +41,7 @@ export function buildTagBody(d: ProtectedTagConfig): Record<string, unknown> {
 
 export const protectedTagsCycle: Cycle<ProtectedTagsScope> = {
   name: "protected-tags",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

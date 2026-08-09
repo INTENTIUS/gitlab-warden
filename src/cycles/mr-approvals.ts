@@ -85,6 +85,7 @@ export function buildSettingsBody(d: ApprovalSettings): Record<string, unknown> 
 
 export const mrApprovalsCycle: Cycle<MrApprovalsScope> = {
   name: "mr-approvals",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,

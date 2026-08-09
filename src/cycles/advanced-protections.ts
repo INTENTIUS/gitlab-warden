@@ -29,6 +29,7 @@ interface GlJobTokenScope {
 
 export const advancedProtectionsCycle: Cycle<AdvancedProtectionsScope> = {
   name: "advanced-protections",
+  verb: "policy-guardrail",
 
   async fetchLive(
     client: GitLabClient,
