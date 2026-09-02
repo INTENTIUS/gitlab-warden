@@ -133,6 +133,24 @@ describe("runMigrate", () => {
     expect(outcome.stderr).toContain("ref: main");
   });
 
+  it("a workflow with two crons gets a unique description per schedule", async () => {
+    // The reconcile diff keys schedules by description; duplicates would
+    // collapse two crons into one live schedule.
+    const src = join(tmp, "two-cron.yml");
+    writeFileSync(src, scheduleWorkflow);
+    const outcome = await runMigrate(parseMigrateArgs([src]));
+    const start = outcome.stderr.indexOf("pipelineSchedules:");
+    const fragment = parseYaml(outcome.stderr.slice(start)) as {
+      pipelineSchedules: Array<{ description: string; cron: string }>;
+    };
+    expect(fragment.pipelineSchedules).toHaveLength(2);
+    expect(fragment.pipelineSchedules.map((s) => s.description)).toEqual([
+      "migrated from two-cron.yml #1",
+      "migrated from two-cron.yml #2",
+    ]);
+    expect(new Set(fragment.pipelineSchedules.map((s) => s.description)).size).toBe(2);
+  });
+
   it("hint output parses as a valid pipelineSchedules policy fragment (fixture)", async () => {
     // The 01-triggers fixture carries an `on: schedule` trigger, so migrating
     // it fires MIG-ON-SCHEDULE and prints the policy block. The block must be

@@ -90,6 +90,11 @@ export function extractSchedules(content: string, sourceFile: string): DroppedSc
  * translation dropped. The `pipeline-schedules` reconcile cycle consumes this
  * exact shape: declared on a project node, the schedules become governed,
  * drift-corrected state.
+ *
+ * Descriptions must be unique — the reconcile diff keys schedules by
+ * description, so two crons from one workflow sharing a description would
+ * collapse into a single live schedule. A file with more than one dropped
+ * cron gets a numbered description per cron.
  */
 export function renderScheduleHint(schedules: DroppedSchedule[]): string {
   const lines: string[] = [
@@ -104,8 +109,14 @@ export function renderScheduleHint(schedules: DroppedSchedule[]): string {
     "",
     "pipelineSchedules:",
   ];
+  const perFile = new Map<string, number>();
+  for (const s of schedules) perFile.set(s.sourceFile, (perFile.get(s.sourceFile) ?? 0) + 1);
+  const nth = new Map<string, number>();
   for (const s of schedules) {
-    lines.push(`  - description: "migrated from ${basename(s.sourceFile)}"`);
+    const n = (nth.get(s.sourceFile) ?? 0) + 1;
+    nth.set(s.sourceFile, n);
+    const suffix = perFile.get(s.sourceFile)! > 1 ? ` #${n}` : "";
+    lines.push(`  - description: "migrated from ${basename(s.sourceFile)}${suffix}"`);
     lines.push(`    cron: "${s.cron}"`);
     lines.push(`    ref: main`);
   }
