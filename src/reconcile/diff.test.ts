@@ -85,6 +85,22 @@ describe("diff — pipeline schedules (keyed by description)", () => {
     expect(converged.entries).toHaveLength(0);
   });
 
+  it("a declared refs/heads/ ref converges against the normalized live short name", () => {
+    const cs = diff(
+      proj,
+      { kind: "project", pipelineSchedules: [{ ...nightly, ref: "refs/heads/main" }] },
+      { pipelineSchedules: [{ id: 1, ...nightly }] }, // live ref: "main"
+    );
+    expect(cs.entries).toHaveLength(0);
+    // …and real ref drift is still caught through the normalization.
+    const drifted = diff(
+      proj,
+      { kind: "project", pipelineSchedules: [{ ...nightly, ref: "refs/heads/release" }] },
+      { pipelineSchedules: [{ id: 1, ...nightly }] },
+    );
+    expect(drifted.entries[0]!.fields).toEqual([{ field: "ref", before: "main", after: "refs/heads/release" }]);
+  });
+
   it("cron/ref/active drift → update with only the drifted fields", () => {
     const cs = diff(
       proj,

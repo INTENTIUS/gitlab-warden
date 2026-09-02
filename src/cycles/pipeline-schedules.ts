@@ -27,7 +27,7 @@ import type {
   PipelineScheduleConfig,
   PipelineScheduleVariableConfig,
 } from "../config/types.js";
-import { scheduleVarNeedsWrite } from "../reconcile/diff.js";
+import { scheduleVarNeedsWrite, shortRef } from "../reconcile/diff.js";
 import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
@@ -69,9 +69,9 @@ function mapSchedule(raw: GlSchedule): LivePipelineSchedule {
   if (typeof raw.id === "number") s.id = raw.id;
   if (raw.cron !== undefined) s.cron = raw.cron;
   if (raw.cron_timezone !== undefined) s.cronTimezone = raw.cron_timezone;
-  // GitLab may report the ref fully qualified ("refs/heads/main"); config
-  // declares the short name, so normalize for the diff.
-  if (raw.ref !== undefined) s.ref = raw.ref.replace(/^refs\/(heads|tags)\//, "");
+  // GitLab may report the ref fully qualified ("refs/heads/main"); normalize
+  // for the diff (which normalizes the desired side symmetrically).
+  if (raw.ref !== undefined) s.ref = shortRef(raw.ref);
   if (typeof raw.active === "boolean") s.active = raw.active;
   if (raw.variables !== undefined) s.variables = raw.variables.filter((v) => v.key).map(mapVariable);
   if (raw.owner?.username !== undefined) s.owner = raw.owner.username;

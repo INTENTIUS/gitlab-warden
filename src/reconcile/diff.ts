@@ -529,7 +529,17 @@ function diffVariablesAs(
 // Pipeline schedules (keyed by description; live id carried for apply)
 // ---------------------------------------------------------------------------
 
-const SCHEDULE_FIELDS = ["cron", "cronTimezone", "ref", "active"];
+const SCHEDULE_FIELDS = ["cron", "cronTimezone", "active"];
+
+/**
+ * Strip a fully-qualified ref prefix ("refs/heads/main" / "refs/tags/v1" →
+ * "main" / "v1"). GitLab may report a schedule's ref fully qualified and
+ * operators may declare it that way; both sides normalize through this so
+ * `refs/heads/main` converges against a live `main` (and vice versa).
+ */
+export function shortRef(ref: string): string {
+  return ref.replace(/^refs\/(heads|tags)\//, "");
+}
 
 /**
  * Whether one declared schedule variable needs a write against its live
@@ -607,6 +617,11 @@ function diffPipelineSchedules(
     live: new Map(live.map((s) => [s.description, s])),
     compareFields: (ds, ls) => {
       const fields = diffFields(ds as unknown as Record<string, unknown>, ls as unknown as Record<string, unknown>, SCHEDULE_FIELDS);
+      // Refs compare normalized on BOTH sides so a declared refs/heads/main
+      // converges against a live main (fetchLive normalizes live refs too).
+      if (shortRef(ds.ref) !== (ls.ref === undefined ? undefined : shortRef(ls.ref))) {
+        fields.push({ field: "ref", before: ls.ref, after: ds.ref });
+      }
       // Variables reconciled by key — selective by omission like every slice:
       // an undeclared `variables` leaves live variables alone.
       if (ds.variables !== undefined && !scheduleVarsConverged(ds.variables, ls.variables ?? [], owns(ds.description))) {
