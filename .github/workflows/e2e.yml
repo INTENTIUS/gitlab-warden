@@ -21,7 +21,7 @@ concurrency:
 jobs:
   e2e:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
@@ -33,7 +33,7 @@ jobs:
       - name: bring up GitLab CE + mint token
         run: bash e2e/bootstrap.sh
 
-      - name: run e2e (with apply phase)
+      - name: run e2e (with apply smoke)
         env:
           GITLAB_E2E_APPLY: '1'
         run: npm run test:e2e:run

@@ -137,15 +137,20 @@ tier-gated endpoints handled as described above.
 ## Tests
 
 `npm test` runs the unit suite (mock-client, fully offline). The
-[e2e suite](https://github.com/INTENTIUS/gitlab-warden/tree/main/e2e)
+[e2e smoke suite](https://github.com/INTENTIUS/gitlab-warden/tree/main/e2e)
 is **fully hermetic**. It stands up GitLab CE via Docker Compose and
-provisions its own group and project with no external account or secrets.
-It exercises every cycle's read path (asserting it stays read-only), runs one
-real apply behind an opt-in flag, and tears down:
+provisions its own group, project, and users with no external account or
+secrets. It exercises every cycle's read path (asserting it stays read-only)
+and, behind an opt-in flag, a full apply smoke. Every CE-supported cycle
+applies a policy and then re-converges to an empty plan; out-of-band drift
+gets corrected on the next run, and nodes declaring `owned` perform a real
+delete. Tier-gated cycles assert graceful degradation instead. The
+cycle-by-cycle table lives in
+[e2e/README.md](https://github.com/INTENTIUS/gitlab-warden/blob/main/e2e/README.md).
 
 ```sh
 eval "$(npm run --silent e2e:up)"   # compose up + mint token (GitLab CE is slow)
-npm run test:e2e:run
+GITLAB_E2E_APPLY=1 npm run test:e2e:run
 npm run e2e:down
 ```
 
