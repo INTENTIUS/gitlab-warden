@@ -1,4 +1,4 @@
-# e2e smoke suite
+# Hermetic e2e smoke suite
 
 `warden.e2e.test.ts` runs against a throwaway GitLab **CE 17.11** Docker
 Compose stack (`docker-compose.yml` + `bootstrap.sh`). The suite self-skips
@@ -12,7 +12,7 @@ GITLAB_E2E_APPLY=1 npm run test:e2e:run
 npm run e2e:down
 ```
 
-## What the smoke covers
+## Coverage
 
 Every cycle gets the read-only check (fetchLive + diff issues no mutating
 call, on both group and project nodes). Cycles CE supports also get the full
@@ -21,8 +21,8 @@ out-of-band and re-run to correct the **drift**, and — where `owned` applies �
 a real **delete**. Premium/Ultimate cycles get the **tier-graceful** check
 instead.
 
-| Cycle | Read-only | Apply | Converge | Drift fix | Delete | Tier behavior on CE |
-| --- | --- | --- | --- | --- | --- | --- |
+| Cycle | Read | Apply | Converge | Drift | Delete via `owned` | Gated-read NOTE |
+|---|---|---|---|---|---|---|
 | group-settings | yes | yes | yes | yes | n/a (settings) | — |
 | project-settings | yes | yes | yes | yes | n/a (settings) | — |
 | members | yes | yes | yes | yes | yes (+ removalLiveCap block first) | — |

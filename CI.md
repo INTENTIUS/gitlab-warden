@@ -1,7 +1,7 @@
 # Running warden in CI
 
-warden is built to live in a pipeline next to the policy file: dry-run on
-merge requests, apply on the default branch, and a scheduled run to correct
+The steady state for governance is a pipeline: dry-run the plan on every
+merge request, apply on the default branch, and a scheduled run to correct
 drift that happens between pushes (the push-rules cycle exists for exactly
 that). The exit codes make the wiring trivial: 0 clean, 1 guardrail block,
 2 config error, 3 runtime/apply failure; anything non-zero fails the job.

@@ -3,7 +3,7 @@
 From zero to a reviewed governance plan. Nothing here mutates GitLab. The
 default mode is dry-run, and this page stops right before `--mode apply`.
 
-## 1. Install
+## Install
 
 No install needed with npx:
 
@@ -20,7 +20,7 @@ npm install -g @intentius/gitlab-warden
 Node 22+ (the CLI is a single bundled ESM file; `yaml` is its only runtime
 dependency beside the shared reconcile core).
 
-## 2. Create a token
+## Create a token
 
 warden authenticates with a plain API token sent as `PRIVATE-TOKEN`. Either:
 
@@ -46,7 +46,7 @@ export GITLAB_TOKEN=glpat-…
 
 `--token-env` names a different variable if you prefer.
 
-## 3. Point at your instance
+## Point at your instance
 
 gitlab.com is the default. For self-managed, pass the instance URL:
 
@@ -58,7 +58,7 @@ gitlab.com is the default. For self-managed, pass the instance URL:
 The client talks to `<base-url>/api/v4` (REST) and `<base-url>/api/graphql`
 (the two Ultimate GraphQL cycles).
 
-## 4. First dry-run
+## First dry-run
 
 Write a minimal policy that declares one group and one project with one
 slice each (the full schema is in the [policy reference](POLICY.md)):
@@ -98,7 +98,7 @@ widen the policy node by node, and only reach for `--mode apply` once the
 printed plan says exactly what you meant. The [CLI reference](CLI.md) has the
 full flag and exit-code list; the [CI guide](CI.md) shows the pipeline wiring.
 
-## 5. A disposable sandbox: the e2e stack
+## A disposable sandbox: the e2e stack
 
 The repo ships a fully hermetic e2e environment (GitLab CE in Docker Compose,
 with no external account and no secrets) that doubles as a safe place to try

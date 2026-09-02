@@ -7,25 +7,34 @@ desired slice from config; it then diffs and guardrail-checks before planning
 (dry-run) or applying. A cycle no-ops on node kinds it doesn't cover and on
 nodes that don't declare its slice.
 
-Common behavior, so it isn't repeated 19 times:
+Shared behavior, so it isn't repeated 19 times:
 
+- **Selective-by-omission.** An absent field or collection is never read for
+  mutation, diffed, or changed: a cycle only acts on the slice of the policy
+  it owns.
+- **Ownership-gated deletes.** The diff proposes deleting a live entry
+  missing from the policy only when that entry's collection is marked owned
+  (`isOwned`), and by default nothing is owned: a run creates and updates
+  but never deletes. A node's `owned` declaration in the policy (`true`, or
+  a list of resource types — see the [policy reference](POLICY.md)) marks
+  resources owned; a programmatic `diffOptions.isOwned` predicate overrides
+  the declaration when supplied. The delete paths listed below run only in
+  nodes that opted in.
+- **Tier-gated reads are tolerated.** A declared slice whose read comes
+  back 403 is tolerated and skipped, never fatal: the read yields no live
+  state, and the cycle's plan gains a NOTE line naming the slice
+  (`read was tier-gated (403); planned entries may fail on apply`). A
+  slice you declared anyway plans as a create, and its apply lands the 403 in
+  that cycle's `failed[]` (with the API message). The GraphQL cycles extend
+  the same tolerance and NOTE to a CE/FOSS schema that lacks the EE field
+  entirely.
+- **Request budget.** A run has a shared budget of 1000 API requests. On
+  exhaustion the run stops cleanly and prints `DEFERRED (budget): <cycles>`
+  to stderr; run again (or narrow `--cycles`) to finish.
 - **Endpoints** are REST (`/api/v4`) unless marked GraphQL.
-- Premium/Ultimate-gated reads that 403 are tolerated: the read yields no
-  live state and the run continues instead of erroring, and the cycle's plan
-  gains a `NOTE: <slice>: read was tier-gated (403); planned entries may fail
-  on apply` line. (A slice you declared anyway then plans as a create, and
-  its apply surfaces the 403 in the per-cycle `failed[]` output with the API
-  message.) The GraphQL cycles extend the same tolerance and NOTE to a
-  CE/FOSS schema that lacks the EE field entirely.
-- **Deletes** are ownership-gated (`isOwned`) at the diff layer. Ownership is
-  declared per node in the policy: `owned: true` claims every collection the
-  node's cycles reconcile, `owned: [member, …]` only the listed resource
-  types, and an absent `owned` (the default) means the node plans creates and
-  updates only (see the [policy reference](POLICY.md)). The delete paths
-  listed below run only in nodes that opted in.
-- Config entries are matched to live entries by a human-stable key (name,
-  url, username) rather than GitLab's numeric ids; the live ids are carried
-  along for the apply path but never diffed.
+- **Keying.** Config entries are matched to live entries by a human-stable
+  key (name, url, username) rather than GitLab's numeric ids; the live ids
+  are carried along for the apply path but never diffed.
 
 The 19 cycles, in registry order (`src/cli/registry.ts`):
 

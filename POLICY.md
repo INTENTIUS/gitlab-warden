@@ -12,26 +12,27 @@ cycles, the guardrails) serves the policy. It is the one file you must author.
   becomes one reconcile scope with a kind-prefixed id (`group:acme/platform`).
 - warden manages exactly the declared nodes. It never auto-walks
   `descendant_groups` to claim the rest of the tree (see [DESIGN.md](DESIGN.md) §1).
-- Selective-by-omission, at two levels: which nodes you declare, and which
-  fields/collections within a node you declare. An absent field or collection is
-  never read for mutation, diffed, or changed.
+- Selective-by-omission: an absent field or collection is never read for
+  mutation, diffed, or changed. This holds at two levels: which nodes you
+  declare, and which fields/collections within a node you declare.
 
 Two behaviors worth knowing before you write one:
 
-- **Deletes are opt-in, per node.** The diff only emits a delete for a live
-  entry absent from config when warden owns that resource, and ownership is
-  declared in the policy itself, per node, via `owned`. With `owned` absent
-  (the default) a node's plans contain **creates and updates only**; a live
-  member, webhook, or variable you did not declare is left alone. `owned: true`
-  claims every collection warden reconciles on that node; a list such as
-  `owned: [member, webhook]` claims only those resource types (the `[type]`
-  labels shown in plans). Where deletes are unlocked, the `removalLiveCap`
-  guardrail still refuses any apply whose deletes exceed 25% of the node's
-  live entries in the declared collections — a converged node's single stale
-  delete passes, a typo'd mass-delete blocks. With no live entries to measure
-  against it falls back to the plan-relative cap (deletes over the plan's
-  updates plus deletes). (Library callers can pass `diffOptions.isOwned`,
-  which overrides the per-node declaration.)
+- **Deletes are opt-in, per node.** Deletes are ownership-gated: the diff
+  proposes deleting a live entry missing from the policy only when that
+  entry's collection is marked owned, and by default nothing is owned — a
+  node's plans contain **creates and updates only**, so a live member,
+  webhook, or variable you did not declare is left alone. Declaring
+  `owned: true` on a node makes warden own every resource collection it
+  reconciles there; a list such as `owned: [member, webhook]` limits
+  ownership to the listed resource types (the `[type]` labels shown in
+  plans). A programmatic `diffOptions.isOwned` predicate, when supplied,
+  overrides the declaration. Owned deletes still run the guardrails before
+  any apply: `removalLiveCap` refuses an apply whose deletes exceed 25% of
+  the live managed entries in the collections the policy declares; with
+  nothing live to measure against it falls back to chant's plan-relative
+  `removalDeltaCap` (deletes over the plan's updates plus deletes). A
+  converged node's single stale delete passes, a typo'd mass-delete blocks.
 - **Tier-graceful.** Premium/Ultimate endpoints that return 403 on read are
   tolerated and skipped, never fatal: the cycle's plan gains a
   `NOTE: <slice>: read was tier-gated (403); planned entries may fail on apply`

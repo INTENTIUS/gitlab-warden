@@ -6,19 +6,37 @@
   <a href="https://www.npmjs.com/package/@intentius/gitlab-warden"><img src="https://img.shields.io/npm/v/@intentius/gitlab-warden" alt="npm"></a>
 </p>
 
-Declarative governance for GitLab **groups & projects**: the whole surface,
-in one lightweight tool you run in CI.
+**Keep your GitLab groups and projects in a declared state, with guardrails
+and drift correction.**
 
-Docs site: https://intentius.io/gitlab-warden/
+Full documentation lives at
+[intentius.io/gitlab-warden](https://intentius.io/gitlab-warden/), with deep
+dives on these pages.
 
-This is the third warden built on the shared provider-agnostic reconcile
-primitive in
-[`@intentius/chant/reconcile`](https://github.com/INTENTIUS/chant). That
-core also powers [github-warden](https://github.com/INTENTIUS/github-warden)
-and [forgejo-warden](https://github.com/INTENTIUS/forgejo-warden).
-gitlab-warden supplies the GitLab layer: a REST + GraphQL client with a configurable host
-(self-managed or GitLab.com), the config and live-state types, and the
-reconcile cycles with their GitLab `diff()`.
+- [Policy](POLICY.md)
+- [Migrate](MIGRATE.md)
+- [CLI](CLI.md)
+- [Cycles](CYCLES.md)
+- [CI pipelines](CI.md)
+- [Setup](SETUP.md)
+- [Design](DESIGN.md)
+
+## Set up with an agent
+
+From a checkout, Claude Code picks up the skill in
+`.claude/skills/gitlab-warden` automatically. Other agents can install it with
+`npx skills add INTENTIUS/gitlab-warden`, or by copying the skill directory
+into `~/.claude/skills/`. Then paste this prompt, filling in the placeholders:
+
+```text
+Use the gitlab-warden skill to help me set up governance for my GitLab group
+<GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes: policy for the
+groups and projects I care about (ask me which slices matter), then run a
+dry-run reconcile and walk me through the plan. Do not apply anything.
+```
+
+The skill holds the agent to dry-run until you've reviewed the plan; deletes
+stay off entirely until you mark a node `owned` in the policy.
 
 ## What you need
 
@@ -31,15 +49,11 @@ reconcile cycles with their GitLab `diff()`.
   walks through creating one).
 - Node 22+.
 
-Teams moving off GitHub Actions can start with
-`gitlab-warden migrate .github/workflows/`, which translates the existing
-workflows into a stitched `.gitlab-ci.yml` (the [migration guide](MIGRATE.md)).
-
-About ten minutes to a first dry-run plan. For a quick probe you don't need
-the checkout at all. The CLI runs straight off npm, reads only, and prints a
-plan without changing anything:
+About ten minutes gets you to a first dry-run plan. The quickest probe needs
+no clone at all:
 
 ```bash
+# Dry-run: reads only, prints a plan, changes nothing.
 npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
 ```
 
@@ -47,32 +61,15 @@ The npm package is also what your pipeline installs later (the
 [CI guide](CI.md)). Add `--base-url` for self-managed (defaults to
 gitlab.com). Full config + flags in [Usage](#usage) below.
 
-## Set up with an agent
-
-From a checkout, Claude Code picks up the skill in
-`.claude/skills/gitlab-warden` automatically. For other agents, run
-`npx skills add INTENTIUS/gitlab-warden`, or copy `.claude/skills/gitlab-warden`
-into `~/.claude/skills/`.
-
-Paste this and fill in the placeholders:
-
-```text
-Use the gitlab-warden skill to help me set up governance for my GitLab group
-<GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes: policy for the
-groups and projects I care about (ask me which slices matter), then run a
-dry-run reconcile and walk me through the plan. Do not apply anything.
-```
-
-The skill points the agent at the [policy schema](POLICY.md), the
-[setup guide](SETUP.md), and the [CLI](CLI.md) and [cycles](CYCLES.md)
-references, then holds it to dry-run until you've reviewed the plan. Deletes
-stay off entirely until you mark a node `owned` in the policy.
+Teams moving off GitHub Actions can start with
+`gitlab-warden migrate .github/workflows/`, which translates the existing
+workflows into a stitched `.gitlab-ci.yml` (the [migration guide](MIGRATE.md)).
 
 ## What it is
 
-You declare desired state in YAML (selective-by-omission, meaning an absent
-field is never touched); warden diffs it against the live GitLab API and, in
-`apply` mode, converges it, guarded so a typo can't mass-delete.
+You declare desired state in YAML (selective-by-omission: an absent field is
+never read, diffed, or touched); warden diffs it against the live GitLab API
+and, in `apply` mode, converges it, guarded so a typo can't mass-delete.
 
 It's a **single binary + a YAML file in CI**: no state file, no HCL, no
 provider toolchain to stand up. The point is governance-as-code without the
@@ -169,6 +166,15 @@ the grant lives at an ancestor). The
 cycle follows.
 
 ## How it relates to the sibling wardens
+
+This is the third warden built on the shared provider-agnostic reconcile
+primitive in
+[`@intentius/chant/reconcile`](https://github.com/INTENTIUS/chant). That
+core also powers [github-warden](https://github.com/INTENTIUS/github-warden)
+and [forgejo-warden](https://github.com/INTENTIUS/forgejo-warden).
+gitlab-warden supplies the GitLab layer: a REST + GraphQL client with a configurable host
+(self-managed or GitLab.com), the config and live-state types, and the
+reconcile cycles with their GitLab `diff()`.
 
 | | github-warden | forgejo-warden | gitlab-warden |
 |---|---|---|---|

@@ -28,6 +28,15 @@ install:
 # Everything CI runs
 check: tsc test
 
+# Start the hermetic e2e stack (compose up + mint token); GitLab CE is slow.
+# The exports land on stdout, so: eval "$(just e2e-up)"
+e2e-up:
+    bash e2e/bootstrap.sh
+
+# Stop the e2e stack and discard its state (compose down -v)
+e2e-down:
+    docker compose -f e2e/docker-compose.yml down -v
+
 # Build the docs site locally (requires `pip install mkdocs-material`)
 docs:
     npm run lint:prose

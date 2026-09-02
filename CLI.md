@@ -9,9 +9,10 @@ gitlab-warden migrate <path> [flags]
 
 `reconcile` is the governance loop this page documents; `migrate` translates
 GitHub Actions workflows into GitLab CI YAML and has its own page
-([MIGRATE.md](MIGRATE.md), flags included). `gitlab-warden --help` prints
-usage (`--help` works after a subcommand too); `gitlab-warden --version`
-prints the version (inlined from package.json at build time).
+([MIGRATE.md](MIGRATE.md), flags included). `gitlab-warden --help` (or no
+arguments, or `--help` after a subcommand) prints usage;
+`gitlab-warden --version` prints the version (inlined from package.json at
+build time).
 
 ## Reconcile flags
 
@@ -62,11 +63,11 @@ Never pass the token on the command line; export it and name the variable via
   `Applied: N, Failed: M` per cycle with one `FAILED [type] key: error` line
   per failure (e.g. a 403 from a tier-gated endpoint).
 - **Guardrail**: `removalLiveCap` refuses an apply whose deletes exceed 25%
-  of that cycle's **live** entries in the collections the node declares: one
+  of the live managed entries in the collections the policy declares; with
+  nothing live to measure against it falls back to chant's plan-relative
+  `removalDeltaCap` (deletes over the plan's updates plus deletes). One
   stale delete on an otherwise-converged node passes (1 of N live), while a
-  typo'd mass-delete blocks. When a cycle has no live entries to measure
-  against, the check falls back to chant's plan-relative `removalDeltaCap`
-  (deletes over the plan's updates + deletes). A tripped guardrail prints
+  typo'd mass-delete blocks. A tripped guardrail prints
   `GUARDRAIL BLOCK: …`, skips that cycle's apply, and exits 1.
   `--allow-guardrail-override` applies anyway. (Deletes appear in a plan only
   for nodes whose policy declares `owned` — see [POLICY.md](POLICY.md); a node
@@ -80,10 +81,10 @@ Never pass the token on the command line; export it and name the variable via
 
 | Code | Meaning |
 |---|---|
-| 0 | success — plan printed (dry-run) or everything applied |
-| 1 | guardrail block during apply (for `migrate --strict`: error-severity findings) |
-| 2 | argument or config error (bad flag, unknown cycle, unreadable/invalid config, missing token env var) |
-| 3 | runtime error (API failure, a cycle errored, or one or more apply entries failed) |
+| 0 | Success: the plan printed (dry-run), or apply completed with no failures. |
+| 1 | Guardrail block: apply mode, at least one guardrail tripped, and `--allow-guardrail-override` was not set. For `migrate --strict`: error-severity findings remain. |
+| 2 | Argument or config error (unknown flag, unknown cycle, unreadable or invalid config, missing auth). |
+| 3 | Runtime error (API failure, an errored cycle, or failed apply entries). |
 
 In CI, that means: a dry-run job fails only on real errors, and an apply job
 fails loudly on a guardrail trip (1) or partial application (3). See
