@@ -187,8 +187,12 @@ describe("runMigrate", () => {
       expect(existsSync(join(outDir, "ci.gitlab-ci.yml"))).toBe(true);
       expect(existsSync(join(outDir, "matrix.gitlab-ci.yml"))).toBe(true);
       const root = readFileSync(join(outDir, ".gitlab-ci.yml"), "utf-8");
-      const parsed = parseYaml(root.replace(/^#[^\n]*\n+/g, "")) as { include: Array<{ local: string }> };
+      const parsed = parseYaml(root.replace(/^#[^\n]*\n+/g, "")) as { include: Array<{ local: string }>; stages: string[] };
       expect(parsed.include.map((e) => e.local).sort()).toEqual(["ci.gitlab-ci.yml", "matrix.gitlab-ci.yml"]);
+      // The root declares the union of both workflows' stages so the merged
+      // config never loses a stage to include-order override.
+      expect(parsed.stages).toContain("build");
+      expect(parsed.stages).toContain("test");
     });
 
     it("--no-stitch suppresses the root file", async () => {
@@ -250,10 +254,11 @@ describe("schedule extraction + rendering", () => {
 });
 
 describe("renderStitchedRoot", () => {
-  it("is valid YAML with one include per file", () => {
-    const parsed = parseYaml(renderStitchedRoot(["a.gitlab-ci.yml", "b.gitlab-ci.yml"]).replace(/^#[^\n]*\n+/g, "")) as {
-      include: Array<{ local: string }>;
-    };
+  it("is valid YAML with one include per file and the stage union up top", () => {
+    const parsed = parseYaml(
+      renderStitchedRoot(["a.gitlab-ci.yml", "b.gitlab-ci.yml"], ["build", "test", "deploy"]).replace(/^#[^\n]*\n+/g, ""),
+    ) as { include: Array<{ local: string }>; stages: string[] };
     expect(parsed.include).toEqual([{ local: "a.gitlab-ci.yml" }, { local: "b.gitlab-ci.yml" }]);
+    expect(parsed.stages).toEqual(["build", "test", "deploy"]);
   });
 });

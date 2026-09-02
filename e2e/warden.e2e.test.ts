@@ -30,7 +30,13 @@
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, basename } from "node:path";
+import { parse as parseYaml } from "yaml";
 import { createClient, encodeId, type GitLabClient } from "../src/auth/client.js";
+import { runMigrate } from "../src/migrate/migrate.js";
+import { parseMigrateArgs } from "../src/migrate/args.js";
 import { CYCLE_REGISTRY } from "../src/cli/registry.js";
 import { diff } from "../src/reconcile/diff.js";
 import { runReconcile, nodeScopeId, type RateBudget, type CycleResult, type ReconcileResult } from "../src/reconcile/runner.js";
@@ -753,5 +759,122 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
         "NOTE: securityPolicy: read was tier-gated (403); planned entries may fail on apply",
       );
     });
+  });
+
+  // ── migrate: validate translated pipelines with GitLab's own CI lint ──────
+  //
+  // Migrates a realistic workflow set, commits the stitched output into the
+  // throwaway project via the repository files API, then asks GitLab itself
+  // (`POST /projects/:id/ci/lint`, project-scoped so `include: local:`
+  // resolves against the committed files) whether the pipeline is valid.
+
+  describe("migrate: translated pipelines pass GitLab CI lint", () => {
+    interface LintResponse {
+      valid: boolean;
+      errors: string[];
+      warnings: string[];
+      merged_yaml: string | null;
+    }
+
+    const CI_WORKFLOW = [
+      "name: CI",
+      "on:",
+      "  push:",
+      "    branches: [main]",
+      "  pull_request:",
+      "jobs:",
+      "  build:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - uses: actions/checkout@v4",
+      "      - run: make build",
+      "  test:",
+      "    runs-on: ubuntu-latest",
+      "    needs: build",
+      "    strategy:",
+      "      matrix:",
+      "        node: [20, 22]",
+      "    steps:",
+      "      - uses: actions/checkout@v4",
+      "      - run: npm test",
+      "",
+    ].join("\n");
+
+    const NIGHTLY_WORKFLOW = [
+      "name: Nightly",
+      "on:",
+      "  schedule:",
+      "    - cron: '0 6 * * 1'",
+      "jobs:",
+      "  audit:",
+      "    runs-on: ubuntu-latest",
+      "    steps:",
+      "      - run: npm audit",
+      "",
+    ].join("\n");
+
+    async function lint(content: string): Promise<LintResponse> {
+      return client.request<LintResponse>("POST", `/projects/${projectId}/ci/lint`, { content });
+    }
+
+    it("stitched directory output lints valid with includes resolved in project context", async () => {
+      const tmp = mkdtempSync(join(tmpdir(), "warden-e2e-migrate-"));
+      try {
+        const inDir = join(tmp, "workflows");
+        const outDir = join(tmp, "out");
+        mkdirSync(inDir, { recursive: true });
+        writeFileSync(join(inDir, "ci.yml"), CI_WORKFLOW);
+        writeFileSync(join(inDir, "nightly.yml"), NIGHTLY_WORKFLOW);
+
+        const outcome = await runMigrate(parseMigrateArgs([inDir, "-o", outDir]));
+        expect(outcome.exitCode).toBe(0);
+        const rootFile = outcome.written.find((w) => basename(w) === ".gitlab-ci.yml");
+        expect(rootFile).toBeDefined();
+        expect(outcome.written.length).toBe(3); // 2 per-workflow files + stitched root
+
+        // Commit the migrated set into the project so include:local resolves.
+        await client.request("POST", `/projects/${projectId}/repository/commits`, {
+          branch: "main",
+          commit_message: "e2e: migrated pipeline set",
+          actions: outcome.written.map((w) => ({
+            action: "create",
+            file_path: basename(w),
+            content: readFileSync(w, "utf-8"),
+          })),
+        });
+
+        const result = await lint(readFileSync(rootFile!, "utf-8"));
+        expect(result.errors).toEqual([]);
+        expect(result.valid).toBe(true);
+
+        // The merged config carries every migrated job under the stage union.
+        const merged = parseYaml(result.merged_yaml ?? "") as Record<string, unknown>;
+        expect(merged["build"]).toBeDefined();
+        expect(merged["test"]).toBeDefined();
+        expect(merged["audit"]).toBeDefined();
+        expect(merged["stages"]).toEqual(expect.arrayContaining(["build", "test"]));
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }, 120_000);
+
+    it("single-file (no-stitch) output lints valid", async () => {
+      const tmp = mkdtempSync(join(tmpdir(), "warden-e2e-migrate1-"));
+      try {
+        const src = join(tmp, "ci.yml");
+        writeFileSync(src, CI_WORKFLOW);
+        const outcome = await runMigrate(parseMigrateArgs([src]));
+        expect(outcome.exitCode).toBe(0);
+
+        const result = await lint(outcome.stdout);
+        expect(result.errors).toEqual([]);
+        expect(result.valid).toBe(true);
+        const merged = parseYaml(result.merged_yaml ?? "") as Record<string, unknown>;
+        expect(merged["build"]).toBeDefined();
+        expect(merged["test"]).toBeDefined();
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }, 120_000);
   });
 });

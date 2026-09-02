@@ -43,6 +43,24 @@ instead.
 | compliance-frameworks | yes | — | — | — | — | missing GraphQL field tolerated; plan NOTE |
 | security-policies | yes | — | — | — | — | missing GraphQL field tolerated; plan NOTE |
 
+## Migrate validation
+
+Beyond the cycles, the suite validates `gitlab-warden migrate` output against
+the same live stack (no extra env vars; it runs whenever the suite is
+configured). It migrates a realistic workflow set (a push/PR pipeline with
+`needs:` + matrix, and a scheduled workflow), commits the stitched output
+(root `.gitlab-ci.yml` plus per-workflow includes) into the throwaway project
+via the repository commits API, then calls the project-scoped CI lint endpoint
+(`POST /projects/:id/ci/lint`) so `include: local:` resolves against the
+committed files. It asserts `valid: true` and that the merged config contains
+every migrated job and the stitched stage union. The single-file (no-stitch)
+output is lint-validated the same way.
+
+| Scenario | Committed to repo | Lint valid | Merged jobs asserted |
+| --- | --- | --- | --- |
+| directory mode (stitched root + includes) | yes | yes | build, test, audit + stage union |
+| single file (no stitch) | no (inline content) | yes | build, test |
+
 Notes on the tier rows: GitLab CE signals its REST feature gates as **404**,
 not 403, so on CE those reads degrade to "unmanaged" without a plan NOTE (the
 NOTE fires on a real 403, e.g. gitlab.com free tier — covered by unit tests).
