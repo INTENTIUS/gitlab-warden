@@ -7,6 +7,7 @@
 import { describe, it, expect } from "vitest";
 import { removalDeltaCap } from "@intentius/chant/reconcile";
 import { runReconcile, parseScope, nodeScopeId, type Cycle } from "./runner.js";
+import { diff } from "./diff.js";
 import { noteGatedSlice } from "../cycles/_shared.js";
 import type { GitLabClient } from "../auth/client.js";
 import type { NodeConfig, GovernanceConfig } from "../config/types.js";
@@ -185,7 +186,7 @@ const tenLive = (): LiveNodeState => ({
   members: Array.from({ length: 10 }, (_, i) => ({ userId: i, username: `m${i}`, accessLevel: 30 })),
 });
 
-describe("removalDeltaCap wiring (live-denominator removal guardrail)", () => {
+describe("removalDeltaCap wiring (per-type live denominators via managedCounts)", () => {
   it("a converged cycle's single stale delete passes: 1 of 10 live is 10%", async () => {
     const applied: string[] = [];
     const result = await runReconcile({
@@ -197,13 +198,54 @@ describe("removalDeltaCap wiring (live-denominator removal guardrail)", () => {
     });
     const cr = result.cycles[0]!;
     // Plan-relative, the cap would see 1 delete / 1 managed entry = 100% and
-    // block; the live `managedTotal` denominator keeps this applyable.
+    // block; the live per-type denominator keeps this applyable.
     expect(cr.guardrails.ok).toBe(true);
     expect(cr.guardrailBlocked).toBe(false);
     expect(applied).toEqual(["m0"]);
   });
 
-  it("4 deletes of 10 live blocks (40% > 25%), naming live managed entries", async () => {
+  it("wiping 3 of 4 webhooks blocks at 75% even with 20 members live (no pooled dilution)", async () => {
+    // A pooled denominator would read 3 deletes / 24 live entries = 12.5% and
+    // wave the wipe through; per-type counts judge webhooks against webhooks.
+    const live: LiveNodeState = {
+      members: Array.from({ length: 20 }, (_, i) => ({ userId: i, username: `m${i}`, accessLevel: 30 })),
+      webhooks: Array.from({ length: 4 }, (_, i) => ({ id: i, url: `https://h${i}.example.com` })),
+    };
+    const twoSliceCycle: Cycle = {
+      name: "two-slice",
+      async fetchLive() {
+        return live;
+      },
+      buildDesired(config: NodeConfig) {
+        return { kind: config.kind, members: config.members, webhooks: config.webhooks };
+      },
+      async apply() {},
+    };
+    const result = await runReconcile({
+      config: {
+        nodes: {
+          "acme/platform": {
+            kind: "group",
+            owned: true,
+            members: Array.from({ length: 20 }, (_, i) => ({ user: `m${i}`, accessLevel: 30 })),
+            webhooks: [{ url: "https://h0.example.com" }], // drops h1..h3
+          },
+        },
+      },
+      client: mockClient(),
+      cycles: [twoSliceCycle],
+      mode: "apply",
+    });
+    const cr = result.cycles[0]!;
+    expect(cr.guardrailBlocked).toBe(true);
+    expect(cr.guardrails.ok).toBe(false);
+    if (!cr.guardrails.ok) {
+      expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalDeltaCap");
+      expect(cr.guardrails.diagnostics[0]!.message).toContain("3 of 4 live webhook entries");
+    }
+  });
+
+  it("4 deletes of 10 live members blocks (40% > 25%), naming the type", async () => {
     const applied: string[] = [];
     const result = await runReconcile({
       config: cfg(["m0", "m1", "m2", "m3", "m4", "m5"]), // drop m6..m9
@@ -217,70 +259,30 @@ describe("removalDeltaCap wiring (live-denominator removal guardrail)", () => {
     expect(cr.guardrails.ok).toBe(false);
     if (!cr.guardrails.ok) {
       expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalDeltaCap");
-      expect(cr.guardrails.diagnostics[0]!.message).toContain("4 of 10 live managed entries");
+      expect(cr.guardrails.diagnostics[0]!.message).toContain("4 of 10 live member entries");
     }
     expect(applied).toHaveLength(0);
   });
 
-  it("zero live entries falls back to the plan-relative denominator", () => {
-    const changeSet = {
-      org: "group:acme",
-      entries: [
-        { kind: "update" as const, resourceType: "member", key: "a", fields: [] },
-        { kind: "delete" as const, resourceType: "member", key: "b" },
-      ],
-    };
-    // managedTotal 0 is not a usable denominator → the cap stays plan-relative:
-    // 1 delete of 2 plan-managed entries = 50% > 25% → trips.
-    const diag = removalDeltaCap(changeSet, { maxFraction: 0.25, managedTotal: 0 });
+  it("a zero live count from diff() is no denominator — that type stays plan-relative", () => {
+    // A declared slice with nothing live stamps 0, which chant treats as "no
+    // live info", never a divide-by-zero or a looser cap.
+    const cs = diff("group:acme", { kind: "group", members: [] }, { members: [] });
+    expect(cs.managedCounts).toEqual({ member: 0 });
+    const diag = removalDeltaCap(
+      {
+        ...cs,
+        entries: [
+          { kind: "update", resourceType: "member", key: "a", fields: [] },
+          { kind: "delete", resourceType: "member", key: "b" },
+        ],
+      },
+      { maxFraction: 0.25 },
+    );
     expect(diag).not.toBeNull();
     expect(diag!.guardrail).toBe("removalDeltaCap");
-    expect(diag!.message).not.toContain("live managed entries");
-    // …and a plan with no deletes passes the fallback too.
-    expect(removalDeltaCap({ org: "group:acme", entries: [] }, { maxFraction: 0.25, managedTotal: 0 })).toBeNull();
-  });
-
-  it("captures the count from the immediately preceding diff (per scope × cycle sequencing)", async () => {
-    // Two scopes with different live rosters: scope `a` has 10 live members
-    // and drops 1 (10% → pass); scope `b` has 4 live and drops 2 (50% →
-    // block). If the runner's closure did not track the diff call it just
-    // made (chant's loop is strictly sequential per scope × cycle), scope b
-    // would be judged against scope a's total (2/10 = 20% → wrongly pass).
-    const perScope: Record<string, LiveNodeState> = {
-      "group:acme/a": tenLive(),
-      "group:acme/b": {
-        members: Array.from({ length: 4 }, (_, i) => ({ userId: 100 + i, username: `b${i}`, accessLevel: 30 })),
-      },
-    };
-    const cycle: Cycle = {
-      name: "members",
-      async fetchLive(_client, scopeId) {
-        return perScope[scopeId]!;
-      },
-      buildDesired(config: NodeConfig) {
-        return { kind: config.kind, members: config.members };
-      },
-      async apply() {},
-    };
-    const members = (users: string[]): NodeConfig => ({
-      kind: "group",
-      owned: true,
-      members: users.map((user) => ({ user, accessLevel: 30 })),
-    });
-    const result = await runReconcile({
-      config: {
-        nodes: {
-          "acme/a": members(["m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8", "m9"]), // 1 delete of 10
-          "acme/b": members(["b0", "b1"]), // 2 deletes of 4
-        },
-      },
-      client: mockClient(),
-      cycles: [cycle],
-      mode: "apply",
-    });
-    const byOrg = Object.fromEntries(result.cycles.map((c) => [c.org, c]));
-    expect(byOrg["group:acme/a"]!.guardrailBlocked).toBe(false);
-    expect(byOrg["group:acme/b"]!.guardrailBlocked).toBe(true);
+    expect(diag!.message).toContain("planned member entries");
+    expect(diag!.message).not.toContain("live member entries");
   });
 });
 

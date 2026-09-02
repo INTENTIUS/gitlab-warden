@@ -40,9 +40,9 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@intentius/chant": "^0.55.0",
-    "@intentius/chant-lexicon-github": "^0.55.0",
-    "@intentius/chant-lexicon-gitlab": "^0.55.0",
+    "@intentius/chant": "^0.56.0",
+    "@intentius/chant-lexicon-github": "^0.56.0",
+    "@intentius/chant-lexicon-gitlab": "^0.56.0",
     "yaml": "^2.9.0"
   }
 }

@@ -15,10 +15,12 @@
  * `resolveNodeRenames`): a pending rename's scope runs under the OLD path for
  * the whole run and the appended `node-rename` cycle applies the rename last.
  *
- * Guardrails: the removal cap (don't let a typo mass-delete), computed against
- * the LIVE roster — chant's `removalDeltaCap` with the live denominator from
- * `diff()` (`managedTotal`, #2067). A self-lockout guard (don't strip the last
- * Owner) can be layered in once the members cycle lands.
+ * Guardrails: the removal cap (don't let a typo mass-delete), evaluated PER
+ * RESOURCE TYPE against the LIVE roster — `diff()` stamps per-type live counts
+ * on the change set (`ChangeSet.managedCounts`) and chant's `removalDeltaCap`
+ * reads them, so live entries of one type cannot dilute a wipe of another. A
+ * self-lockout guard (don't strip the last Owner) can be layered in once the
+ * members cycle lands.
  */
 
 import {
@@ -174,10 +176,12 @@ function ownedPredicate(owned: NodeConfig["owned"]): DiffOptions["isOwned"] {
  * Deletes: per scope, a caller-supplied `diffOptions.isOwned` wins; otherwise
  * the predicate is derived from that node's `owned` declaration (see
  * `NodeConfig.owned`). Guardrails (`removalDeltaCap`) apply either way.
- * The cap runs with `managedTotal` set to the live denominator from `diff()`
- * (`liveManagedTotal`): a converged cycle's one stale delete reads as 1/N of
- * the live roster, not 1/1 of the plan. With no live entries the cap keeps
- * chant's plan-relative behavior, so nothing gets less safe.
+ * `diff()` stamps per-type live counts on the change set
+ * (`ChangeSet.managedCounts`) and the cap evaluates each resource type
+ * against its own live denominator: a converged cycle's one stale delete
+ * reads as 1/N of that type's live roster, not 1/1 of the plan, while live
+ * entries of another type cannot dilute a wipe. A type with no live count
+ * keeps chant's per-type plan-relative behavior, so nothing gets less safe.
  */
 export async function runReconcile<TScope = unknown>(
   opts: RunReconcileOptions<TScope>,
@@ -213,12 +217,6 @@ export async function runReconcile<TScope = unknown>(
       ? [...opts.cycles, nodeRenameCycle as unknown as Cycle<TScope>]
       : opts.cycles;
 
-  // Live denominator for `removalDeltaCap` (`managedTotal`), captured from the
-  // immediately preceding `diff()` call. Sound because chant's loop is strictly
-  // sequential per scope × cycle — diff, then guardrails, on the same change
-  // set (locked by a test in runner.test.ts).
-  let lastLiveManagedTotal = 0;
-
   // Clear notes a previous (crashed/errored) run may have left behind.
   drainGatedSliceNotes();
 
@@ -234,14 +232,13 @@ export async function runReconcile<TScope = unknown>(
       // declaration from there — `desired` is a cycle's buildDesired output
       // and may not carry it.
       const isOwned = dopts.isOwned ?? ownedPredicate(scopes[scopeId]?.owned);
-      const changeSet = diff(scopeId, desired, live, { ...dopts, isOwned });
-      lastLiveManagedTotal = changeSet.liveManagedTotal;
-      return changeSet;
+      return diff(scopeId, desired, live, { ...dopts, isOwned });
     },
+    // The change set carries its own per-type live denominators
+    // (`managedCounts`, stamped by `diff()`), so the cap needs only the
+    // fraction — passing a managedTotal here would shadow the per-type counts.
     guardrails: (changeSet) =>
-      runGuardrailChecks(changeSet, [
-        (resolved) => removalDeltaCap(resolved, { maxFraction, managedTotal: lastLiveManagedTotal }),
-      ]),
+      runGuardrailChecks(changeSet, [(resolved) => removalDeltaCap(resolved, { maxFraction })]),
     diffOptions: opts.diffOptions,
     allowGuardrailOverride: opts.allowGuardrailOverride,
     requestBudget: opts.requestBudget,

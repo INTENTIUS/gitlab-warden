@@ -123,8 +123,11 @@ describe("diff — pipeline schedules (keyed by description)", () => {
         { id: 2, description: "b", cron: "0 2 * * *", ref: "main" },
       ],
     };
-    expect(diff(proj, { kind: "project", pipelineSchedules: [] }, live).liveManagedTotal).toBe(2);
-    expect(diff(proj, { kind: "project" }, live).liveManagedTotal).toBe(0); // undeclared → not counted
+    expect(diff(proj, { kind: "project", pipelineSchedules: [] }, live).managedCounts).toEqual({
+      "pipeline-schedule": 2,
+    });
+    // Undeclared → the type is absent from managedCounts entirely.
+    expect(diff(proj, { kind: "project" }, live).managedCounts).toEqual({});
   });
 });
 
@@ -134,5 +137,41 @@ describe("diff — ChangeSet shape", () => {
     expect(cs.org).toBe(node);
     // group-settings sorts before member
     expect(cs.entries[0]!.resourceType).toBe("group-settings");
+  });
+
+  it("managedCounts holds per-type live counts for declared, delete-capable slices only", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      groupSettings: { description: "d" }, // single-object slice — never deletes
+      baselines: [{ kind: "project", path: "api" }], // create-only — never deletes
+      members: [{ user: "alice", accessLevel: 30 }],
+      webhooks: [],
+      // variables NOT declared → must not appear even though live has some
+    };
+    const live: LiveNodeState = {
+      groupSettings: { description: "d" },
+      members: [
+        { userId: 1, username: "alice", accessLevel: 30 },
+        { userId: 2, username: "bob", accessLevel: 30 },
+      ],
+      webhooks: [{ id: 1, url: "https://h" }],
+      variables: [{ key: "K", value: "v" }],
+      children: [],
+    };
+    expect(diff(node, desired, live).managedCounts).toEqual({ member: 2, webhook: 1 });
+  });
+
+  it("a webhook being renamed in place still counts into its type's live denominator", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [{ url: "https://new", previously: "https://old" }, { url: "https://kept" }],
+    };
+    const live: LiveNodeState = {
+      webhooks: [
+        { id: 1, url: "https://old" },
+        { id: 2, url: "https://kept" },
+      ],
+    };
+    expect(diff(node, desired, live).managedCounts).toEqual({ webhook: 2 });
   });
 });

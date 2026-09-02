@@ -109,60 +109,27 @@ export const RESOURCE_TYPE_ORDER = [
   "system-hook",
 ] as const;
 
-/** Result of `diff()` — the shared ChangeSet plus warden's guardrail denominator. */
-export interface DiffResult extends ChangeSet {
-  /**
-   * Number of LIVE entries across the collections this node's policy declares
-   * (the same declared-slice condition the diff itself uses). The runner feeds
-   * it to chant's `removalDeltaCap` as `managedTotal` (#2067): with a live
-   * denominator, deletes divide by the live roster instead of the plan's
-   * updates+deletes, so one stale delete in an otherwise-converged cycle reads
-   * as 1/N rather than 100%.
-   */
-  liveManagedTotal: number;
-}
-
-/**
- * The collection slices that can plan delete entries, paired desired-key ↔
- * live-key (they happen to match). Single-object slices (settings, push rules)
- * and create-only baselines never delete, so they stay out of the denominator.
- */
-const LIVE_CAP_COLLECTIONS = [
-  "members",
-  "protectedBranches",
-  "protectedTags",
-  "protectedEnvironments",
-  "deployKeys",
-  "deployTokens",
-  "accessTokens",
-  "memberRoles",
-  "complianceFrameworks",
-  "approvalRules",
-  "variables",
-  "pipelineSchedules",
-  "webhooks",
-  "integrations",
-  "instanceVariables",
-  "systemHooks",
-] as const satisfies readonly (keyof NodeConfig & keyof LiveNodeState)[];
-
-function countLiveManaged(desired: NodeConfig, live: LiveNodeState): number {
-  let n = 0;
-  for (const key of LIVE_CAP_COLLECTIONS) {
-    if (desired[key] === undefined) continue;
-    const entries = live[key];
-    if (Array.isArray(entries)) n += entries.length;
-  }
-  return n;
-}
-
 export function diff(
   node: string,
   desired: NodeConfig,
   live: LiveNodeState,
   opts: DiffOptions = {},
-): DiffResult {
+): ChangeSet {
   const entries: ChangeSetEntry[] = [];
+
+  // Per-type live counts for chant's per-collection removal cap
+  // (`ChangeSet.managedCounts`), summed natively during the walk from what
+  // each collection diff returns. Only delete-capable collections contribute:
+  // single-object slices (settings, push rules), create-only baselines, and
+  // the node-rename shape never plan deletes, so they must not appear here —
+  // a type absent from the record falls back to chant's per-type
+  // plan-relative denominator. Because a pending node rename runs its scope
+  // under the OLD path, the live entries counted here are the same ones the
+  // entries were diffed against, so rename counting is naturally correct.
+  const managedCounts: Record<string, number> = {};
+  const counted = (resourceType: string, liveCount: number | undefined): void => {
+    if (liveCount !== undefined) managedCounts[resourceType] = liveCount;
+  };
 
   diffNodeRename(desired.nodeRename, entries);
   diffObject("group-settings", desired.groupSettings, live.groupSettings, GROUP_FIELDS, entries);
@@ -171,23 +138,23 @@ export function diff(
   diffObject("approval-settings", desired.approvalSettings, live.approvalSettings, APPROVAL_SETTING_FIELDS, entries);
   diffObject("job-token-scope", desired.jobTokenScope, live.jobTokenScope, ["inboundEnabled"], entries);
   diffObject("security-policy", desired.securityPolicy, live.securityPolicy, ["policyProject"], entries);
-  diffMembers(desired.members, live.members ?? [], opts, entries);
-  diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries);
-  diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries);
-  diffProtectedEnvironments(desired.protectedEnvironments, live.protectedEnvironments ?? [], opts, entries);
-  diffDeployKeys(desired.deployKeys, live.deployKeys ?? [], opts, entries);
-  diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries);
-  diffAccessTokens(desired.accessTokens, live.accessTokens ?? [], opts, entries);
-  diffMemberRoles(desired.memberRoles, live.memberRoles ?? [], opts, entries);
-  diffComplianceFrameworks(desired.complianceFrameworks, live.complianceFrameworks ?? [], opts, entries);
-  diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
-  diffVariables(desired.variables, live.variables ?? [], opts, entries);
-  diffPipelineSchedules(desired.pipelineSchedules, live.pipelineSchedules ?? [], opts, entries);
-  diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
-  diffIntegrations(desired.integrations, live.integrations ?? [], opts, entries);
+  counted("member", diffMembers(desired.members, live.members ?? [], opts, entries));
+  counted("protected-branch", diffProtectedBranches(desired.protectedBranches, live.protectedBranches ?? [], opts, entries));
+  counted("protected-tag", diffProtectedTags(desired.protectedTags, live.protectedTags ?? [], opts, entries));
+  counted("protected-environment", diffProtectedEnvironments(desired.protectedEnvironments, live.protectedEnvironments ?? [], opts, entries));
+  counted("deploy-key", diffDeployKeys(desired.deployKeys, live.deployKeys ?? [], opts, entries));
+  counted("deploy-token", diffDeployTokens(desired.deployTokens, live.deployTokens ?? [], opts, entries));
+  counted("access-token", diffAccessTokens(desired.accessTokens, live.accessTokens ?? [], opts, entries));
+  counted("member-role", diffMemberRoles(desired.memberRoles, live.memberRoles ?? [], opts, entries));
+  counted("compliance-framework", diffComplianceFrameworks(desired.complianceFrameworks, live.complianceFrameworks ?? [], opts, entries));
+  counted("approval-rule", diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries));
+  counted("variable", diffVariables(desired.variables, live.variables ?? [], opts, entries));
+  counted("pipeline-schedule", diffPipelineSchedules(desired.pipelineSchedules, live.pipelineSchedules ?? [], opts, entries));
+  counted("webhook", diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries));
+  counted("integration", diffIntegrations(desired.integrations, live.integrations ?? [], opts, entries));
   diffObject("instance-settings", desired.instanceSettings, live.instanceSettings, desired.instanceSettings ? Object.keys(desired.instanceSettings) : [], entries);
-  diffVariablesAs("instance-variable", desired.instanceVariables, live.instanceVariables ?? [], opts, entries);
-  diffWebhooksAs("system-hook", desired.systemHooks, live.systemHooks ?? [], opts, entries);
+  counted("instance-variable", diffVariablesAs("instance-variable", desired.instanceVariables, live.instanceVariables ?? [], opts, entries));
+  counted("system-hook", diffWebhooksAs("system-hook", desired.systemHooks, live.systemHooks ?? [], opts, entries));
   diffBaselines(desired.baselines, live.children ?? [], entries);
 
   const typeIndex = (t: string): number => {
@@ -199,7 +166,7 @@ export function diff(
     return ti !== 0 ? ti : a.key.localeCompare(b.key);
   });
 
-  return { org: node, entries, liveManagedTotal: countLiveManaged(desired, live) };
+  return { org: node, entries, managedCounts };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,9 +276,9 @@ function diffMembers(
   live: LiveMember[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<MemberConfig, LiveMember>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<MemberConfig, LiveMember>({
     resourceType: "member",
     desired: new Map(desired.map((m) => [String(m.user), m])),
     live: new Map(live.map((m) => [m.username, m])),
@@ -340,9 +307,9 @@ function diffProtectedBranches(
   live: LiveProtectedBranch[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<ProtectedBranchConfig, LiveProtectedBranch>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<ProtectedBranchConfig, LiveProtectedBranch>({
     resourceType: "protected-branch",
     desired: new Map(desired.map((b) => [b.name, b])),
     live: new Map(live.map((b) => [b.name, b])),
@@ -358,9 +325,9 @@ function diffProtectedTags(
   live: LiveProtectedTag[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<ProtectedTagConfig, LiveProtectedTag>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<ProtectedTagConfig, LiveProtectedTag>({
     resourceType: "protected-tag",
     desired: new Map(desired.map((t) => [t.name, t])),
     live: new Map(live.map((t) => [t.name, t])),
@@ -376,9 +343,9 @@ function diffProtectedEnvironments(
   live: LiveProtectedEnvironment[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<ProtectedEnvironmentConfig, LiveProtectedEnvironment>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<ProtectedEnvironmentConfig, LiveProtectedEnvironment>({
     resourceType: "protected-environment",
     desired: new Map(desired.map((e) => [e.name, e])),
     live: new Map(live.map((e) => [e.name, e])),
@@ -401,9 +368,9 @@ function diffDeployKeys(
   live: LiveDeployKey[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<DeployKeyConfig, LiveDeployKey>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<DeployKeyConfig, LiveDeployKey>({
     resourceType: "deploy-key",
     desired: new Map(desired.map((k) => [k.title, k])),
     live: new Map(live.map((k) => [k.title, k])),
@@ -418,10 +385,10 @@ function diffDeployTokens(
   live: LiveDeployToken[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
+): number | undefined {
+  if (desired === undefined) return undefined;
   // Tokens are immutable — reconciled by presence (create/delete only).
-  diffCollection<DeployTokenConfig, LiveDeployToken>({
+  return diffCollection<DeployTokenConfig, LiveDeployToken>({
     resourceType: "deploy-token",
     desired: new Map(desired.map((t) => [t.name, t])),
     live: new Map(live.map((t) => [t.name, t])),
@@ -436,10 +403,10 @@ function diffAccessTokens(
   live: LiveAccessToken[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
+): number | undefined {
+  if (desired === undefined) return undefined;
   // Access tokens are immutable — reconciled by presence (create/delete only).
-  diffCollection<AccessTokenConfig, LiveAccessToken>({
+  return diffCollection<AccessTokenConfig, LiveAccessToken>({
     resourceType: "access-token",
     desired: new Map(desired.map((t) => [t.name, t])),
     live: new Map(live.map((t) => [t.name, t])),
@@ -454,10 +421,10 @@ function diffMemberRoles(
   live: LiveMemberRole[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
+): number | undefined {
+  if (desired === undefined) return undefined;
   // Custom roles reconciled by presence (create/delete) — keyed by name.
-  diffCollection<MemberRoleConfig, LiveMemberRole>({
+  return diffCollection<MemberRoleConfig, LiveMemberRole>({
     resourceType: "member-role",
     desired: new Map(desired.map((r) => [r.name, r])),
     live: new Map(live.map((r) => [r.name, r])),
@@ -472,9 +439,9 @@ function diffComplianceFrameworks(
   live: LiveComplianceFramework[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<ComplianceFrameworkConfig, LiveComplianceFramework>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<ComplianceFrameworkConfig, LiveComplianceFramework>({
     resourceType: "compliance-framework",
     desired: new Map(desired.map((f) => [f.name, f])),
     live: new Map(live.map((f) => [f.name, f])),
@@ -494,9 +461,9 @@ function diffApprovalRules(
   live: LiveApprovalRule[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<ApprovalRuleConfig, LiveApprovalRule>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<ApprovalRuleConfig, LiveApprovalRule>({
     resourceType: "approval-rule",
     desired: new Map(desired.map((r) => [r.name, r])),
     live: new Map(live.map((r) => [r.name, r])),
@@ -529,8 +496,8 @@ function diffVariables(
   live: LiveVariable[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  diffVariablesAs("variable", desired, live, opts, out);
+): number | undefined {
+  return diffVariablesAs("variable", desired, live, opts, out);
 }
 
 function diffVariablesAs(
@@ -539,9 +506,9 @@ function diffVariablesAs(
   live: LiveVariable[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<VariableConfig, LiveVariable>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<VariableConfig, LiveVariable>({
     resourceType,
     desired: new Map(desired.map((v) => [varKey(v.key, v.environmentScope), v])),
     live: new Map(live.map((v) => [varKey(v.key, v.environmentScope), v])),
@@ -590,9 +557,9 @@ function diffPipelineSchedules(
   live: LivePipelineSchedule[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
-  diffCollection<PipelineScheduleConfig, LivePipelineSchedule>({
+): number | undefined {
+  if (desired === undefined) return undefined;
+  return diffCollection<PipelineScheduleConfig, LivePipelineSchedule>({
     resourceType: "pipeline-schedule",
     desired: new Map(desired.map((s) => [s.description, s])),
     live: new Map(live.map((s) => [s.description, s])),
@@ -621,8 +588,8 @@ function diffWebhooks(
   live: LiveWebhook[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  diffWebhooksAs("webhook", desired, live, opts, out);
+): number | undefined {
+  return diffWebhooksAs("webhook", desired, live, opts, out);
 }
 
 function diffWebhooksAs(
@@ -631,8 +598,8 @@ function diffWebhooksAs(
   live: LiveWebhook[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
+): number | undefined {
+  if (desired === undefined) return undefined;
 
   // An explicit `previously:` declaration is an explicit rename intent: when a
   // live hook by the previous URL exists and none by the new URL does, plan
@@ -662,7 +629,10 @@ function diffWebhooksAs(
     out.push({ kind: "update", resourceType, key: dw.url, before: lw, after: dw, fields });
   }
 
-  diffCollection<WebhookConfig, LiveWebhook>({
+  // Live count: the collection diff sees live minus the rename-adopted hooks,
+  // so add those back — a hook being renamed in place is still a live managed
+  // entry for the removal cap's denominator.
+  return renamedFrom.size + diffCollection<WebhookConfig, LiveWebhook>({
     resourceType,
     desired: new Map(
       desired
@@ -686,8 +656,8 @@ function diffIntegrations(
   live: LiveIntegration[],
   opts: DiffOptions,
   out: ChangeSetEntry[],
-): void {
-  if (desired === undefined) return;
+): number | undefined {
+  if (desired === undefined) return undefined;
 
   // Declared `active: false` is an explicit disable. GitLab's PUT upsert
   // (re)activates an integration no matter what, so the only way to turn one
@@ -708,7 +678,11 @@ function diffIntegrations(
     }
   }
 
-  diffCollection<IntegrationConfig, LiveIntegration>({
+  // Live count: the collection diff sees live minus the declared-off entries,
+  // so add back those actually present live — they are live managed entries
+  // (their declared-intent deletes are counted by the cap like any other).
+  const declaredOffLive = live.filter((i) => declaredOff.has(i.name)).length;
+  return declaredOffLive + diffCollection<IntegrationConfig, LiveIntegration>({
     resourceType: "integration",
     desired: new Map(enabled.map((i) => [i.name, i])),
     live: new Map(live.filter((i) => !declaredOff.has(i.name)).map((i) => [i.name, i])),
