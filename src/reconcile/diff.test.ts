@@ -95,16 +95,42 @@ describe("diff — pipeline schedules (keyed by description)", () => {
     expect(cs.entries[0]!.fields!.map((f) => f.field).sort()).toEqual(["active", "cron"]);
   });
 
-  it("variables drift by key → a single `variables` field change; undeclared variables left alone", () => {
+  it("variables drift by key → a single `variables` field change; unowned live extras ride along", () => {
     const live: LiveNodeState = {
       pipelineSchedules: [{ id: 1, ...nightly, variables: [{ key: "K", value: "old" }, { key: "STALE", value: "x" }] }],
     };
     const cs = diff(proj, { kind: "project", pipelineSchedules: [{ ...nightly, variables: [{ key: "K", value: "new" }] }] }, live);
+    // Not owned: the drifted K is corrected, and the undeclared STALE is
+    // carried over in the target list so the apply path won't delete it.
     expect(cs.entries[0]!.fields).toEqual([
-      { field: "variables", before: live.pipelineSchedules![0]!.variables, after: [{ key: "K", value: "new" }] },
+      {
+        field: "variables",
+        before: live.pipelineSchedules![0]!.variables,
+        after: [{ key: "K", value: "new" }, { key: "STALE", value: "x" }],
+      },
+    ]);
+    expect((cs.entries[0]!.after as { variables?: unknown }).variables).toEqual([
+      { key: "K", value: "new" },
+      { key: "STALE", value: "x" },
     ]);
     // No `variables` declared → the live variables are not managed.
     expect(diff(proj, { kind: "project", pipelineSchedules: [nightly] }, live).entries).toHaveLength(0);
+  });
+
+  it("a live-extra variable is drift only when the schedule is owned (no perpetual unowned plan)", () => {
+    const live: LiveNodeState = {
+      pipelineSchedules: [{ id: 1, ...nightly, variables: [{ key: "K", value: "v" }, { key: "STALE", value: "x" }] }],
+    };
+    const declared = { kind: "project" as const, pipelineSchedules: [{ ...nightly, variables: [{ key: "K", value: "v" }] }] };
+    // Not owned: the extra live variable is left alone — converged, no plan.
+    expect(diff(proj, declared, live).entries).toHaveLength(0);
+    // Owned: the deletion is visible in the plan as a variables update whose
+    // target list omits the extra.
+    const owned = diff(proj, declared, live, { isOwned: (t) => t === "pipeline-schedule" });
+    expect(owned.entries).toHaveLength(1);
+    expect(owned.entries[0]!.fields).toEqual([
+      { field: "variables", before: live.pipelineSchedules![0]!.variables, after: [{ key: "K", value: "v" }] },
+    ]);
   });
 
   it("renaming a description is a delete + create (ownership-gated)", () => {

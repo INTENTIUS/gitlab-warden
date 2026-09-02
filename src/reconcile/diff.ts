@@ -532,24 +532,63 @@ function diffVariablesAs(
 const SCHEDULE_FIELDS = ["cron", "cronTimezone", "ref", "active"];
 
 /**
+ * Whether one declared schedule variable needs a write against its live
+ * counterpart (absent live, value drift, or a declared `variableType` that
+ * differs). Selective per field: `variableType` is compared only when declared
+ * (live always reports GitLab's default "env_var", which an omitted type must
+ * not fight). THE schedule-variable drift rule — the diff's convergence check
+ * and the pipeline-schedules apply path both consume it, so it exists once.
+ */
+export function scheduleVarNeedsWrite(
+  desired: PipelineScheduleVariableConfig,
+  live: LivePipelineScheduleVariable | undefined,
+): boolean {
+  if (live === undefined) return true;
+  if (desired.value !== live.value) return true;
+  return desired.variableType !== undefined && desired.variableType !== live.variableType;
+}
+
+/**
  * Whether a schedule's declared variables are converged with live, compared by
- * key. Selective per field: `variableType` is compared only when declared (live
- * always reports GitLab's default "env_var", which an omitted type must not
- * fight).
+ * key. Deleting a live variable you did not declare is an undeclared-entry
+ * prune, so it is drift only when the schedule is owned (`deleteExtras`):
+ * without ownership a live-extra variable is LEFT ALONE — flagging it would be
+ * a perpetual plan the apply path may not act on.
  */
 function scheduleVarsConverged(
   desired: PipelineScheduleVariableConfig[],
   live: LivePipelineScheduleVariable[],
+  deleteExtras: boolean,
 ): boolean {
-  if (desired.length !== live.length) return false;
   const have = new Map(live.map((v) => [v.key, v]));
-  for (const d of desired) {
-    const l = have.get(d.key);
-    if (!l) return false;
-    if (d.value !== l.value) return false;
-    if (d.variableType !== undefined && d.variableType !== l.variableType) return false;
+  if (deleteExtras) {
+    const want = new Set(desired.map((v) => v.key));
+    if (live.some((v) => !want.has(v.key))) return false;
   }
-  return true;
+  return desired.every((d) => !scheduleVarNeedsWrite(d, have.get(d.key)));
+}
+
+/**
+ * The variable list the apply path should converge a schedule to: the declared
+ * variables, plus — when the schedule is NOT owned — the live extras carried
+ * over verbatim, so the apply's delete loop (driven by this list) never prunes
+ * an undeclared variable without ownership.
+ */
+function scheduleVarsTarget(
+  desired: PipelineScheduleVariableConfig[],
+  live: LivePipelineScheduleVariable[],
+  deleteExtras: boolean,
+): PipelineScheduleVariableConfig[] {
+  if (deleteExtras) return desired;
+  const want = new Set(desired.map((v) => v.key));
+  const kept = live
+    .filter((v) => !want.has(v.key))
+    .map((v) => {
+      const keep: PipelineScheduleVariableConfig = { key: v.key, value: v.value ?? "" };
+      if (v.variableType !== undefined) keep.variableType = v.variableType;
+      return keep;
+    });
+  return [...desired, ...kept];
 }
 
 function diffPipelineSchedules(
@@ -559,6 +598,9 @@ function diffPipelineSchedules(
   out: ChangeSetEntry[],
 ): number | undefined {
   if (desired === undefined) return undefined;
+  // Live-extra variables on a schedule are deletable only when the schedule
+  // itself is owned — the same gate its delete entries run under.
+  const owns = (key: string): boolean => opts.isOwned?.("pipeline-schedule", key) === true;
   return diffCollection<PipelineScheduleConfig, LivePipelineSchedule>({
     resourceType: "pipeline-schedule",
     desired: new Map(desired.map((s) => [s.description, s])),
@@ -567,11 +609,19 @@ function diffPipelineSchedules(
       const fields = diffFields(ds as unknown as Record<string, unknown>, ls as unknown as Record<string, unknown>, SCHEDULE_FIELDS);
       // Variables reconciled by key — selective by omission like every slice:
       // an undeclared `variables` leaves live variables alone.
-      if (ds.variables !== undefined && !scheduleVarsConverged(ds.variables, ls.variables ?? [])) {
-        fields.push({ field: "variables", before: ls.variables ?? [], after: ds.variables });
+      if (ds.variables !== undefined && !scheduleVarsConverged(ds.variables, ls.variables ?? [], owns(ds.description))) {
+        fields.push({
+          field: "variables",
+          before: ls.variables ?? [],
+          after: scheduleVarsTarget(ds.variables, ls.variables ?? [], owns(ds.description)),
+        });
       }
       return fields;
     },
+    // The apply path converges variables to `after.variables`, so hand it the
+    // ownership-aware target list rather than the raw declaration.
+    updateAfter: (key, ds, ls) =>
+      ds.variables === undefined ? ds : { ...ds, variables: scheduleVarsTarget(ds.variables, ls.variables ?? [], owns(key)) },
     opts,
     out,
   });

@@ -27,6 +27,7 @@ import type {
   PipelineScheduleConfig,
   PipelineScheduleVariableConfig,
 } from "../config/types.js";
+import { scheduleVarNeedsWrite } from "../reconcile/diff.js";
 import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
@@ -110,7 +111,13 @@ function rethrowOwnership(err: unknown, key: string, base: string, sid: number):
   throw err;
 }
 
-/** Reconcile a schedule's variables by key (POST new, PUT changed, DELETE undeclared). */
+/**
+ * Reconcile a schedule's variables by key (POST new, PUT changed, DELETE
+ * absent from `desired`). `desired` is the diff's ownership-aware target list
+ * (`after.variables`): on an unowned schedule it carries the live extras
+ * along, so the delete loop never prunes an undeclared variable without
+ * ownership. Drift per variable is the shared `scheduleVarNeedsWrite` rule.
+ */
 async function applyVariables(
   client: GitLabClient,
   base: string,
@@ -122,11 +129,11 @@ async function applyVariables(
   const have = new Map(live.map((v) => [v.key, v]));
   for (const d of desired) {
     const l = have.get(d.key);
+    if (!scheduleVarNeedsWrite(d, l)) continue;
+    charge(budget);
     if (!l) {
-      charge(budget);
       await client.request("POST", `${base}/${sid}/variables`, variableBody(d));
-    } else if (d.value !== l.value || (d.variableType !== undefined && d.variableType !== l.variableType)) {
-      charge(budget);
+    } else {
       const body: Record<string, unknown> = { value: d.value };
       if (d.variableType !== undefined) body.variable_type = d.variableType;
       await client.request("PUT", `${base}/${sid}/variables/${encodeId(d.key)}`, body);
