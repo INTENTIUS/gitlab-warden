@@ -132,8 +132,8 @@ nodes:
 ```
 
 `--mode dry-run` (default) prints the plan; `--mode apply` converges it,
-with the removal-cap guardrail blocking any accidental mass-delete and
-tier-gated endpoints handled as described above.
+with the per-collection removal cap bounding deletes per apply (see
+[POLICY.md](POLICY.md)) and tier-gated endpoints handled as described above.
 
 ## Tests
 
