@@ -190,15 +190,23 @@ export const pipelineSchedulesCycle: Cycle<PipelineSchedulesScope> = {
     const base = `/projects/${encodeId(path)}/pipeline_schedules`;
     try {
       charge(budget);
-      const listed = await client.paginate<GlSchedule>(base);
-      const schedules: LivePipelineSchedule[] = [];
-      for (const raw of listed) {
-        if (!raw.description || typeof raw.id !== "number") continue;
-        // The list endpoint omits variables — fetch each schedule for them.
-        charge(budget);
-        const full = await client.request<GlSchedule>("GET", `${base}/${raw.id}`);
-        schedules.push(mapSchedule({ ...raw, ...full }));
-      }
+      const listed = (await client.paginate<GlSchedule>(base)).filter(
+        (raw) => raw.description && typeof raw.id === "number",
+      );
+      // The list endpoint omits variables — fetch each schedule's detail, the
+      // sole source of truth for its live state. The GETs are charged up
+      // front, then run with bounded concurrency; results keep list order.
+      if (listed.length > 0) charge(budget, listed.length);
+      const details = new Array<GlSchedule>(listed.length);
+      let next = 0;
+      await Promise.all(
+        Array.from({ length: Math.min(5, listed.length) }, async () => {
+          for (let i = next++; i < listed.length; i = next++) {
+            details[i] = await client.request<GlSchedule>("GET", `${base}/${listed[i]!.id}`);
+          }
+        }),
+      );
+      const schedules = details.map(mapSchedule);
       noteShadowedDuplicates(schedules, scopeId);
       return { pipelineSchedules: schedules };
     } catch (err) {

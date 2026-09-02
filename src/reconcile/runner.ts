@@ -111,6 +111,21 @@ async function nodeIsLive(client: GitLabClient, kind: NodeKind, path: string): P
   }
 }
 
+/** Result of resolving `previously:` aliases against live state. */
+export interface NodeRenameResolution {
+  /** Verified pending renames, in declaration order. */
+  pending: PendingNodeRename[];
+  /**
+   * Aliased nodes whose live probe failed with a non-404 error. The failure
+   * is contained to that node: its alias is left inert (the node reconciles
+   * under its declared path this run) and the error is surfaced in the run
+   * result's `errored` — it does not abort the whole run.
+   */
+  errored: Array<{ kind: NodeKind; path: string; error: string }>;
+  /** Probe GETs performed — charged against the run's request budget. */
+  probeRequests: number;
+}
+
 /**
  * Resolve each node's `previously:` alias against live state, BEFORE scope
  * enumeration — scope ids are kind-prefixed full paths built from node keys,
@@ -118,18 +133,20 @@ async function nodeIsLive(client: GitLabClient, kind: NodeKind, path: string): P
  * pending rename only when the live resource exists at the old path and none
  * exists at the declared path; a declared path that is already live wins (the
  * alias is inert), and an alias with nothing live at either path is a no-op
- * falling back to normal create behavior. The 1-2 probe GETs per aliased node
- * run before the request budget exists and are not charged against it.
+ * falling back to normal create behavior.
  *
- * Config errors (an alias on an instance node, a cross-namespace alias — a
- * transfer, not a rename — or an alias colliding with another declared node)
- * throw rather than guess.
+ * Two passes: a synchronous validation pass first — config errors (an alias
+ * on an instance node, a cross-namespace alias — a transfer, not a rename —
+ * or an alias colliding with another declared node) throw before any network
+ * I/O — then the aliased nodes' live probes run concurrently. The 1-2 probe
+ * GETs per aliased node are counted in `probeRequests` and the runner charges
+ * them against the request budget.
  */
 export async function resolveNodeRenames(
   client: GitLabClient,
   nodes: Record<string, NodeConfig>,
-): Promise<PendingNodeRename[]> {
-  const pending: PendingNodeRename[] = [];
+): Promise<NodeRenameResolution> {
+  const candidates: Array<{ path: string; kind: NodeKind; prev: string }> = [];
   const seenAliases = new Set<string>();
   for (const [path, node] of Object.entries(nodes)) {
     const prev = node.previously;
@@ -150,11 +167,39 @@ export async function resolveNodeRenames(
       throw new Error(`previously: "${prev}" is declared by more than one node`);
     }
     seenAliases.add(prev);
-    if (await nodeIsLive(client, node.kind, path)) continue; // declared path live → alias inert
-    if (!(await nodeIsLive(client, node.kind, prev))) continue; // nothing to adopt → normal create path
-    pending.push({ kind: node.kind, fromPath: prev, toPath: path });
+    candidates.push({ path, kind: node.kind, prev });
   }
-  return pending;
+
+  let probeRequests = 0;
+  const probe = async (kind: NodeKind, path: string): Promise<boolean> => {
+    probeRequests += 1;
+    return nodeIsLive(client, kind, path);
+  };
+  type ProbeOutcome =
+    | { pending: PendingNodeRename }
+    | { errored: NodeRenameResolution["errored"][number] }
+    | null;
+  const outcomes = await Promise.all(
+    candidates.map(async ({ path, kind, prev }): Promise<ProbeOutcome> => {
+      try {
+        if (await probe(kind, path)) return null; // declared path live → alias inert
+        if (!(await probe(kind, prev))) return null; // nothing to adopt → normal create path
+        return { pending: { kind, fromPath: prev, toPath: path } };
+      } catch (err) {
+        return {
+          errored: { kind, path, error: err instanceof Error ? err.message : String(err) },
+        };
+      }
+    }),
+  );
+
+  const resolution: NodeRenameResolution = { pending: [], errored: [], probeRequests };
+  for (const o of outcomes) {
+    if (o === null) continue;
+    if ("pending" in o) resolution.pending.push(o.pending);
+    else resolution.errored.push(o.errored);
+  }
+  return resolution;
 }
 
 /**
@@ -189,8 +234,11 @@ export async function runReconcile<TScope = unknown>(
   const maxFraction = opts.removalDeltaCapFraction ?? 0.25;
 
   // Resolve `previously:` aliases first — scopes are built from node keys, so
-  // a pending rename must be known before the node map becomes scopes.
-  const pendingRenames = await resolveNodeRenames(opts.client, opts.config.nodes);
+  // a pending rename must be known before the node map becomes scopes. The
+  // alias probes are charged against the request budget below; a node whose
+  // probe failed reconciles under its declared path and lands in `errored`.
+  const renameResolution = await resolveNodeRenames(opts.client, opts.config.nodes);
+  const pendingRenames = renameResolution.pending;
   const renameByPath = new Map(pendingRenames.map((p) => [p.toPath, p]));
 
   // Map declared nodes (keyed by full path) → kind-prefixed reconcile scopes.
@@ -241,8 +289,20 @@ export async function runReconcile<TScope = unknown>(
       runGuardrailChecks(changeSet, [(resolved) => removalDeltaCap(resolved, { maxFraction })]),
     diffOptions: opts.diffOptions,
     allowGuardrailOverride: opts.allowGuardrailOverride,
-    requestBudget: opts.requestBudget,
+    // The alias probes above already spent part of the run's budget.
+    requestBudget: Math.max(0, (opts.requestBudget ?? 1000) - renameResolution.probeRequests),
   });
+
+  // Surface contained probe failures: the node ran under its declared path
+  // (alias inert) and the caller sees why the rename did not resolve.
+  for (const e of renameResolution.errored) {
+    result.errored.push({
+      name: "node-rename",
+      org: nodeScopeId(e.kind, e.path),
+      stage: "fetchLive",
+      error: `previously: probe failed — ${e.error}`,
+    });
+  }
 
   // Surface caveats recorded by cycles during fetchLive (tier-gated reads,
   // shadowed live entries, …) as NOTE lines on the owning cycle's plan — an

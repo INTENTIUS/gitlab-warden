@@ -169,6 +169,47 @@ describe("previously: fallbacks and validation", () => {
     await expect(runReconcile({ config, client, cycles: [] })).rejects.toThrow(/more than one node/);
   });
 
+  it("contains a non-404 probe failure to its node: alias inert, error recorded, run continues", async () => {
+    const boom = (): never => {
+      throw new Error("GitLab API error 500 Internal Server Error");
+    };
+    const client = makeClient({
+      "GET /projects/acme%2Fbroken": boom, // this alias's declared-path probe fails
+      "GET /projects/acme%2Fnew-api": notFound, // the healthy alias resolves normally
+    });
+    const config: GovernanceConfig = {
+      nodes: {
+        "acme/broken": { kind: "project", previously: "acme/broken-old" },
+        "acme/new-api": { kind: "project", previously: "acme/old-api" },
+      },
+    };
+    const result = await runReconcile({ config, client, cycles: [], mode: "dry-run" });
+    // The failed probe did not abort the run: the healthy rename resolved and
+    // its node-rename cycle ran under the adopted old path…
+    expect(result.completed).toBe(true);
+    expect(result.cycles.map((c) => c.org)).toContain("project:acme/old-api");
+    // …while the broken node's failure is surfaced, alias left inert.
+    expect(result.errored).toEqual([
+      {
+        name: "node-rename",
+        org: "project:acme/broken",
+        stage: "fetchLive",
+        error: expect.stringContaining("500"),
+      },
+    ]);
+  });
+
+  it("charges the request budget for the alias probes", async () => {
+    const client = makeClient({ "GET /projects/acme%2Fnew-api": notFound });
+    const config: GovernanceConfig = {
+      nodes: { "acme/new-api": { kind: "project", previously: "acme/old-api" } },
+    };
+    const result = await runReconcile({ config, client, cycles: [], mode: "dry-run", requestBudget: 10 });
+    // Two probes (declared path, then old path) spent from the budget of 10;
+    // the appended node-rename cycle performs no reads of its own in dry-run.
+    expect(result.budgetRemaining).toBe(8);
+  });
+
   it("drops an operator-written nodeRename slice (runner-owned, not config)", async () => {
     const client = makeClient();
     const config: GovernanceConfig = {
