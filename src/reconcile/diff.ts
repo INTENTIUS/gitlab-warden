@@ -47,7 +47,6 @@ import type {
   WebhookConfig,
   IntegrationConfig,
   BaselineConfig,
-  NodeRenameIntent,
 } from "../config/types.js";
 import type {
   LiveNodeState,
@@ -109,9 +108,34 @@ export const RESOURCE_TYPE_ORDER = [
   "system-hook",
 ] as const;
 
+/**
+ * A pending node rename, resolved by the runner from a node's `previously:`
+ * declaration and verified against live state. Travels through the runner's
+ * rename channel (`makeNodeRenameCycle`) into that cycle's buildDesired
+ * output — never through operator config, which has no such field.
+ */
+export interface NodeRenameIntent {
+  /** Current live full path (the node's `previously`). */
+  fromPath: string;
+  /** Declared full path (the node's key in `nodes{}`). */
+  toPath: string;
+  /** Display name to set alongside the path, when a settings slice manages it. */
+  name?: string;
+}
+
+/**
+ * What `diff()` accepts: operator-shaped `NodeConfig`, plus the runner-owned
+ * `nodeRename` slice the node-rename cycle's buildDesired attaches. Every
+ * plain `NodeConfig` is assignable, so ordinary cycles are unaffected.
+ */
+export interface DiffableNodeConfig extends NodeConfig {
+  /** Runner-verified pending rename. Not operator config. */
+  nodeRename?: NodeRenameIntent;
+}
+
 export function diff(
   node: string,
-  desired: NodeConfig,
+  desired: DiffableNodeConfig,
   live: LiveNodeState,
   opts: DiffOptions = {},
 ): ChangeSet {
@@ -174,13 +198,14 @@ export function diff(
 // ---------------------------------------------------------------------------
 
 /**
- * A runner-injected `nodeRename` slice is an already-verified rename intent:
- * the runner probed live state while resolving the node's `previously:` alias
- * (the live resource exists at `fromPath`, none at `toPath`) and enumerated
- * the scope under the old path. The diff's job is just to shape it as ONE
- * update — never a delete + create, so no `owned` requirement and nothing for
- * the removal guardrails to count. The synthetic `key` field matches chant's
- * `resolveRenames` collapse shape.
+ * A `nodeRename` slice (attached by the runner-composed node-rename cycle's
+ * buildDesired — see `makeNodeRenameCycle`) is an already-verified rename
+ * intent: the runner probed live state while resolving the node's
+ * `previously:` alias (the live resource exists at `fromPath`, none at
+ * `toPath`) and enumerated the scope under the old path. The diff's job is
+ * just to shape it as ONE update — never a delete + create, so no `owned`
+ * requirement and nothing for the removal guardrails to count. The synthetic
+ * `key` field matches chant's `resolveRenames` collapse shape.
  */
 function diffNodeRename(desired: NodeRenameIntent | undefined, out: ChangeSetEntry[]): void {
   if (desired === undefined) return;

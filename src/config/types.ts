@@ -331,22 +331,13 @@ export interface MemberRoleConfig {
 // ---------------------------------------------------------------------------
 
 /**
- * A pending node rename, resolved by the runner from a node's `previously:`
- * declaration (see `NodeConfig.previously`). Runner-injected into the scope's
- * config — never written by operators.
- */
-export interface NodeRenameIntent {
-  /** Current live full path (the node's `previously`). */
-  fromPath: string;
-  /** Declared full path (the node's key in `nodes{}`). */
-  toPath: string;
-  /** Display name to set alongside the path, when no settings slice manages it. */
-  name?: string;
-}
-
-/**
  * Desired state for a single node (group or project). Slices are present only
  * when managed. Later cycles extend this with their own slices.
+ *
+ * A pending rename resolved from `previously:` never appears here: the
+ * runner threads it to the node-rename cycle through its own channel (see
+ * `NodeRenameIntent` in `src/reconcile/diff.ts`), so operator config cannot
+ * carry — or spoof — a rename intent.
  */
 export interface NodeConfig {
   kind: NodeKind;
@@ -360,8 +351,6 @@ export interface NodeConfig {
    * are a different API and unsupported). Not valid on instance nodes.
    */
   previously?: string;
-  /** Runner-injected pending rename (from `previously`). Not operator config. */
-  nodeRename?: NodeRenameIntent;
   /**
    * Ownership declaration for this node's reconciled collections — the gate on
    * planned deletes. Absent or `false` (the default): no deletes are planned in

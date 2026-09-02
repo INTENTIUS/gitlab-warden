@@ -54,7 +54,14 @@ Three behaviors worth knowing before you write one:
   after the other cycles; the next run finds the node at its declared path
   and the alias goes inert, so it is safe to leave in place. The alias must
   share the declared path's parent namespace (a namespace move is a transfer,
-  which is a different API and out of scope). Webhooks support the same
+  which is a different API and out of scope). The rename PUT sends the
+  `path` alone, so a hand-curated display name survives; only a group whose
+  policy manages the name (`groupSettings.name`) gets that managed value
+  sent alongside. One limitation: a pending group rename with declared
+  descendant nodes takes two runs — this run's descendant scopes are
+  addressed by their declared paths, which only exist once the rename
+  (applied last) lands, so the run flags the sequence with a NOTE; apply the
+  rename, then run again for the descendants. Webhooks support the same
   `previously:` (former URL, keeping the hook id). Protected branches
   deliberately do not: they are keyed by name with no in-place rename API, so
   a renamed protection is honestly a delete + create.

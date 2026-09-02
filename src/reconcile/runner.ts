@@ -38,8 +38,9 @@ import { encodeId } from "../auth/client.js";
 import type { GovernanceConfig, NodeConfig, NodeKind } from "../config/types.js";
 import type { LiveNodeState } from "./live.js";
 import { diff } from "./diff.js";
-import { drainPlanNotes, isNotFound } from "../cycles/_shared.js";
-import { nodeRenameCycle } from "../cycles/node-rename.js";
+import type { NodeRenameIntent } from "./diff.js";
+import { drainPlanNotes, isNotFound, notePlan } from "../cycles/_shared.js";
+import { makeNodeRenameCycle } from "../cycles/node-rename.js";
 
 export { BudgetExhaustedError } from "@intentius/chant/reconcile";
 export type {
@@ -244,29 +245,56 @@ export async function runReconcile<TScope = unknown>(
   // Map declared nodes (keyed by full path) → kind-prefixed reconcile scopes.
   // A node with a pending rename is adopted under its OLD path — the live
   // identity — so every cycle reads and writes the resource where it actually
-  // lives, with the verified intent injected as the `nodeRename` slice. The
-  // rename itself is applied by `nodeRenameCycle`, appended LAST below:
-  // chant's loop is cycle-major, so all other cycles finish against the old
-  // path before the rename PUT moves it; the next run finds the node at its
-  // declared path and the alias goes inert. (`nodeRename` is runner-owned:
-  // any operator-written value is dropped here.)
+  // lives. The verified intents travel through the runner-composed channel
+  // below (the map handed to `makeNodeRenameCycle`, keyed by scope id) —
+  // never through the node config, which has no rename field for an operator
+  // to spoof. The rename cycle is appended LAST: chant's loop is cycle-major,
+  // so all other cycles finish against the old path before the rename PUT
+  // moves it; the next run finds the node at its declared path and the alias
+  // goes inert.
   const scopes: Record<string, NodeConfig> = {};
+  const renameIntents = new Map<string, NodeRenameIntent>();
   for (const [path, node] of Object.entries(opts.config.nodes)) {
     const p = renameByPath.get(path);
     if (p) {
-      scopes[nodeScopeId(node.kind, p.fromPath)] = { ...node, nodeRename: { fromPath: p.fromPath, toPath: path } };
+      const scopeId = nodeScopeId(node.kind, p.fromPath);
+      scopes[scopeId] = node;
+      renameIntents.set(scopeId, { fromPath: p.fromPath, toPath: path });
     } else {
-      scopes[nodeScopeId(node.kind, path)] = { ...node, nodeRename: undefined };
+      scopes[nodeScopeId(node.kind, path)] = node;
     }
   }
 
+  // "node-rename" is reserved for the runner-composed cycle — a caller-
+  // supplied cycle by that name would collide with the appended one (and
+  // with the probe-failure errors recorded under it), so refuse loudly.
+  if (opts.cycles.some((c) => c.name === "node-rename")) {
+    throw new Error('cycle name "node-rename" is reserved for the runner-managed rename cycle');
+  }
   const cycles =
-    pendingRenames.length > 0 && !opts.cycles.some((c) => c.name === nodeRenameCycle.name)
-      ? [...opts.cycles, nodeRenameCycle as unknown as Cycle<TScope>]
+    pendingRenames.length > 0
+      ? [...opts.cycles, makeNodeRenameCycle(renameIntents) as unknown as Cycle<TScope>]
       : opts.cycles;
 
   // Clear notes a previous (crashed/errored) run may have left behind.
   drainPlanNotes();
+
+  // A pending rename with declared descendant nodes needs two runs: this
+  // run's descendant scopes were enumerated under their declared paths, which
+  // only exist once the rename (applied last) lands. Say so instead of
+  // leaving spurious 404 plans unexplained.
+  for (const p of pendingRenames) {
+    const descendants = Object.keys(opts.config.nodes).filter((k) => k.startsWith(`${p.toPath}/`));
+    if (descendants.length === 0) continue;
+    notePlan(
+      "node-rename",
+      nodeScopeId(p.kind, p.fromPath),
+      `declared descendant node(s) ${descendants.join(", ")} still live under ` +
+        `"${p.fromPath}" until this rename applies — expect their cycles to 404 or ` +
+        `plan spuriously this run. Apply the rename first, then run again for the ` +
+        `descendants (two-run sequence; see POLICY.md).`,
+    );
+  }
 
   const result = await coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
     client: opts.client,

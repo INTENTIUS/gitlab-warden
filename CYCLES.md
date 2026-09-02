@@ -51,10 +51,12 @@ the alias must resolve before the node map becomes scopes), enumerates a
 pending rename's scope under the old path (the live identity), and appends
 the cycle after the selected ones. Every other cycle therefore reads and
 writes the resource where it actually lives, and the rename
-(`PUT /groups/:id` / `PUT /projects/:id` with the new path, plus the new
-display name unless `groupSettings.name` manages it) lands last; the next
-run finds the node at its declared path and the alias goes inert. A declared
-rename resolves on every run, whatever `--cycles` selects.
+(`PUT /groups/:id` / `PUT /projects/:id` with the new path) lands last; the
+next run finds the node at its declared path and the alias goes inert. A
+declared rename resolves on every run, whatever `--cycles` selects. The PUT
+sends the `path` alone — display names are untouched unless a settings
+slice manages one (`groupSettings.name` on a group node), in which case the
+managed value rides along so the rename and the settings agree.
 
 The 19 registry cycles, in registry order (`src/cli/registry.ts`):
 

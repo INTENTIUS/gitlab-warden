@@ -34,7 +34,7 @@ describe("previously: group rename", () => {
     expect(client.calls.every((c) => c.method === "GET")).toBe(true);
   });
 
-  it("applies as one PUT against the old path, path + name", async () => {
+  it("applies as one PUT against the old path — path only, curated display name untouched", async () => {
     const client = makeClient({ "GET /groups/acme%2Fnew-name": notFound });
     const config: GovernanceConfig = {
       nodes: { "acme/new-name": { kind: "group", previously: "acme/old-name" } },
@@ -43,22 +43,26 @@ describe("previously: group rename", () => {
     const cr = result.cycles[0]!;
     expect(cr.applied).toHaveLength(1);
     expect(cr.failed).toEqual([]);
+    // No settings slice manages the name, so the PUT must not carry one — a
+    // hand-curated display name survives the rename.
     const puts = client.calls.filter((c) => c.method === "PUT");
     expect(puts).toEqual([
-      { method: "PUT", path: "/groups/acme%2Fold-name", body: { path: "new-name", name: "new-name" } },
+      { method: "PUT", path: "/groups/acme%2Fold-name", body: { path: "new-name" } },
     ]);
   });
 
-  it("leaves `name` out of the rename PUT when groupSettings manages it", async () => {
+  it("sends the managed groupSettings.name alongside the path, whatever cycles were selected", async () => {
     const client = makeClient({ "GET /groups/acme%2Fnew-name": notFound });
     const config: GovernanceConfig = {
       nodes: {
         "acme/new-name": { kind: "group", previously: "acme/old-name", groupSettings: { name: "Fancy Name" } },
       },
     };
+    // group-settings is deliberately NOT selected: the managed value still
+    // rides on the rename PUT because it comes from this run's config.
     await runReconcile({ config, client, cycles: [], mode: "apply" });
     const rename = client.calls.find((c) => c.method === "PUT" && c.path === "/groups/acme%2Fold-name")!;
-    expect(rename.body).toEqual({ path: "new-name" });
+    expect(rename.body).toEqual({ path: "new-name", name: "Fancy Name" });
   });
 
   it("runs the other cycles against the old path first; the rename applies last", async () => {
@@ -73,12 +77,12 @@ describe("previously: group rename", () => {
     const puts = client.calls.filter((c) => c.method === "PUT");
     expect(puts.map((c) => c.path)).toEqual(["/groups/acme%2Fold-name", "/groups/acme%2Fold-name"]);
     expect(puts[0]!.body).toEqual({ description: "d" }); // group-settings, old path
-    expect(puts[1]!.body).toEqual({ path: "new-name", name: "new-name" }); // rename last
+    expect(puts[1]!.body).toEqual({ path: "new-name" }); // rename last, path only
   });
 });
 
 describe("previously: project rename", () => {
-  it("applies as one PUT with path + name (project display names are unmanaged)", async () => {
+  it("applies as one PUT with path only (project display names are never managed)", async () => {
     const client = makeClient({ "GET /projects/acme%2Fnew-api": notFound });
     const config: GovernanceConfig = {
       nodes: { "acme/new-api": { kind: "project", previously: "acme/old-api" } },
@@ -91,7 +95,7 @@ describe("previously: project rename", () => {
     expect(cr.applied).toHaveLength(1);
     const puts = client.calls.filter((c) => c.method === "PUT");
     expect(puts).toEqual([
-      { method: "PUT", path: "/projects/acme%2Fold-api", body: { path: "new-api", name: "new-api" } },
+      { method: "PUT", path: "/projects/acme%2Fold-api", body: { path: "new-api" } },
     ]);
   });
 
@@ -155,6 +159,40 @@ describe("previously: fallbacks and validation", () => {
     );
   });
 
+  it('rejects a caller-supplied cycle named "node-rename" (reserved for the runner)', async () => {
+    const impostor = {
+      name: "node-rename",
+      async fetchLive() {
+        return {};
+      },
+      buildDesired(config: { kind: "group" | "project" | "instance" }) {
+        return { kind: config.kind };
+      },
+      async apply() {},
+    };
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project" } } };
+    await expect(runReconcile({ config, client: makeClient(), cycles: [impostor] })).rejects.toThrow(
+      /reserved for the runner-managed rename cycle/,
+    );
+  });
+
+  it("a pending group rename with declared descendant nodes NOTEs the two-run sequence", async () => {
+    const client = makeClient({
+      "GET /groups/acme%2Fnew-name": notFound, // group alias pending
+      "GET /projects/acme%2Fnew-name%2Fapi": notFound, // descendant not live yet either
+    });
+    const config: GovernanceConfig = {
+      nodes: {
+        "acme/new-name": { kind: "group", previously: "acme/old-name" },
+        "acme/new-name/api": { kind: "project" },
+      },
+    };
+    const result = await runReconcile({ config, client, cycles: [], mode: "dry-run" });
+    const rename = result.cycles.find((c) => c.name === "node-rename" && c.org === "group:acme/old-name")!;
+    expect(rename.plan).toContain("NOTE: declared descendant node(s) acme/new-name/api still live under");
+    expect(rename.plan).toContain("two-run sequence");
+  });
+
   it("rejects the same alias on two nodes", async () => {
     const client = makeClient({
       "GET /projects/acme%2Fa": notFound,
@@ -210,14 +248,16 @@ describe("previously: fallbacks and validation", () => {
     expect(result.budgetRemaining).toBe(8);
   });
 
-  it("drops an operator-written nodeRename slice (runner-owned, not config)", async () => {
+  it("ignores an operator-written nodeRename key (the intent channel is runner-owned)", async () => {
     const client = makeClient();
+    // NodeConfig has no nodeRename field — an operator can only smuggle one
+    // in through unvalidated YAML, modeled here with a cast. It must be inert.
     const config: GovernanceConfig = {
       nodes: {
         "acme/api": {
           kind: "project",
           nodeRename: { fromPath: "acme/hijack", toPath: "acme/api" },
-        },
+        } as unknown as GovernanceConfig["nodes"][string],
       },
     };
     const result = await runReconcile({ config, client, cycles: [projectSettingsCycle], mode: "apply" });
