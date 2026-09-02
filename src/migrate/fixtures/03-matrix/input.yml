@@ -1,0 +1,10 @@
+on: push
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu, debian]
+        node: [18, 20, 22]
+    steps:
+      - run: echo "Testing on ${{ matrix.os }} with Node ${{ matrix.node }}"

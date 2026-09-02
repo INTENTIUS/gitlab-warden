@@ -2,15 +2,17 @@
 /**
  * gitlab-warden — governance reconcile CLI.
  *
- * Subcommand:
+ * Subcommands:
  *   reconcile   Load config, build an authed client, run selected cycles.
+ *   migrate     Translate GitHub Actions workflows into GitLab CI YAML.
  *
  * Auth is a GitLab API token; the instance host defaults to gitlab.com and is
  * overridable for self-managed:
  *   --base-url <url> | --base-url-env <VAR>     GitLab instance URL (default https://gitlab.com)
  *   --token-env <VAR>                           env var holding the API token
  *
- * Exit codes: 0 success · 1 guardrail block (apply) · 2 arg/config error ·
+ * Exit codes: 0 success · 1 guardrail block (reconcile apply) or --strict
+ *             diagnostic failure (migrate) · 2 arg/config error ·
  *             3 runtime error.
  */
 
@@ -20,21 +22,16 @@ import { parse as parseYaml } from "yaml";
 import { createClient } from "./auth/client.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
 import { CYCLE_REGISTRY } from "./cli/registry.js";
+import { CliError } from "./cli-error.js";
+import { parseMigrateArgs } from "./migrate/args.js";
+import { runMigrate } from "./migrate/migrate.js";
 import type { GovernanceConfig } from "./config/types.js";
 import pkg from "../package.json" with { type: "json" };
 
 /** Inlined from package.json at build time — always matches the published version. */
 const VERSION: string = pkg.version;
 
-export class CliError extends Error {
-  constructor(
-    public readonly code: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "CliError";
-  }
-}
+export { CliError } from "./cli-error.js";
 
 export interface ReconcileArgs {
   config: string;
@@ -204,12 +201,29 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
   process.exit(0);
 }
 
+async function runMigrateCommand(argv: string[]): Promise<void> {
+  let outcome;
+  try {
+    outcome = await runMigrate(parseMigrateArgs(argv));
+  } catch (err) {
+    if (err instanceof CliError) die(err.code, err.message);
+    die(3, `migrate failed: ${errMsg(err)}`);
+  }
+  if (outcome.stderr) process.stderr.write(outcome.stderr);
+  if (outcome.stdout) process.stdout.write(outcome.stdout);
+  process.exit(outcome.exitCode);
+}
+
 function printUsage(): void {
   process.stdout.write(
     [
-      "Usage: gitlab-warden reconcile [flags]",
+      "Usage: gitlab-warden <subcommand> [flags]",
       "",
-      "Flags:",
+      "Subcommands:",
+      "  reconcile --config <path> [flags]   Reconcile governance policy against live GitLab.",
+      "  migrate <path> [flags]              Translate GitHub Actions workflows to GitLab CI.",
+      "",
+      "Reconcile flags:",
       "  --config <path>               Governance config (YAML or JSON). Required.",
       "  --mode dry-run|apply          Reconcile mode (default: dry-run).",
       "  --cycles <name[,name...]>     Cycles to run (default: all).",
@@ -217,7 +231,16 @@ function printUsage(): void {
       "  --token-env <VAR>             Env var holding the API token (default GITLAB_TOKEN).",
       "  --allow-guardrail-override    Apply even when guardrails trip.",
       "",
-      "Exit codes: 0 success · 1 guardrail block · 2 arg/config error · 3 runtime error.",
+      "Migrate flags:",
+      "  <path>                        One workflow file, or a directory (.github/workflows/).",
+      "  -o, --output <path>           Output file (single input) or directory (directory input).",
+      "  --emit yaml|ts                Output format (default yaml).",
+      "  --strict                      Exit 1 on any error-severity diagnostic.",
+      "  --report <file>               Write SARIF v2.1.0 findings.",
+      "  --use-composites              Rewrite eligible jobs to chant composites.",
+      "  --stitch / --no-stitch        Directory mode: emit a root .gitlab-ci.yml of includes (default on).",
+      "",
+      "Exit codes: 0 success · 1 guardrail block / --strict findings · 2 arg/config error · 3 runtime error.",
       "",
     ].join("\n"),
   );
@@ -237,7 +260,11 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
     await runReconcileCommand(argv.slice(1));
     return;
   }
-  die(2, `unknown subcommand: ${sub}. Did you mean "reconcile"?`);
+  if (sub === "migrate") {
+    await runMigrateCommand(argv.slice(1));
+    return;
+  }
+  die(2, `unknown subcommand: ${sub}. Known subcommands: reconcile, migrate.`);
 }
 
 export async function run(argv: string[]): Promise<void> {
