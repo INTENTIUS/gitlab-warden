@@ -8,7 +8,7 @@ default mode is dry-run, and this page stops right before `--mode apply`.
 No install needed with npx:
 
 ```sh
-npx @intentius/gitlab-warden reconcile --help
+npx @intentius/gitlab-warden
 ```
 
 Or install the `gitlab-warden` binary:

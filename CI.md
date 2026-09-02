@@ -76,7 +76,7 @@ Notes:
 - A guardrail block exits 1 and fails the apply job — that is the intended
   behavior. Review the plan; if the deletions are really intended, re-run with
   `--allow-guardrail-override` (ideally as a manual job, not a default).
-- Pin a version (`npx @intentius/gitlab-warden@0.2.1 …`) if you want
+- Pin a version (`npx @intentius/gitlab-warden@0.2.2 …`) if you want
   reproducible pipelines.
 - Narrow a job with `--cycles` (e.g. a fast hourly `--cycles push-rules`
   schedule plus a nightly full run) to stay well inside the 1000-request
