@@ -33,7 +33,6 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
-    "@intentius/chant-lexicon-github": "^0.44.14",
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.0",
     "sentences": "^0.1.1",
@@ -41,7 +40,9 @@
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@intentius/chant": "^0.44.1",
+    "@intentius/chant": "^0.54.3",
+    "@intentius/chant-lexicon-github": "^0.54.3",
+    "@intentius/chant-lexicon-gitlab": "^0.54.3",
     "yaml": "^2.9.0"
   }
 }
