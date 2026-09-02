@@ -20,7 +20,7 @@ Shared behavior, so it isn't repeated 19 times:
   resources owned; a programmatic `diffOptions.isOwned` predicate overrides
   the declaration when supplied. The delete paths listed below run only in
   nodes that opted in, and every apply is bounded by the per-collection
-  removal cap — see the delete semantics in [POLICY.md](POLICY.md).
+  removal cap (see the delete semantics in [POLICY.md](POLICY.md)).
 - **Tier-gated reads are tolerated.** A declared slice whose read comes
   back 403 is tolerated and skipped, never fatal: the read yields no live
   state, and the cycle's plan gains a NOTE line naming the slice
@@ -54,9 +54,9 @@ writes the resource where it actually lives, and the rename
 (`PUT /groups/:id` / `PUT /projects/:id` with the new path) lands last; the
 next run finds the node at its declared path and the alias goes inert. A
 declared rename resolves on every run, whatever `--cycles` selects. The PUT
-sends the `path` alone — display names are untouched unless a settings
-slice manages one (`groupSettings.name` on a group node), in which case the
-managed value rides along so the rename and the settings agree.
+sends the `path` alone and leaves display names untouched. The exception is
+a group whose policy manages the name (`groupSettings.name`): its managed
+value rides along so the rename and the settings agree.
 
 The 19 registry cycles, in registry order (`src/cli/registry.ts`):
 
