@@ -7,7 +7,7 @@ desired slice from config; it then diffs and guardrail-checks before planning
 (dry-run) or applying. A cycle no-ops on node kinds it doesn't cover and on
 nodes that don't declare its slice.
 
-Shared behavior, so it isn't repeated 19 times:
+Shared behavior, so it isn't repeated 20 times:
 
 - **Selective-by-omission.** An absent field or collection is never read for
   mutation, diffed, or changed: a cycle only acts on the slice of the policy
@@ -43,7 +43,7 @@ Shared behavior, so it isn't repeated 19 times:
   in-place update API (protected branch names, system hooks) stay honest
   delete + create.
 
-Node renames run through **node-rename**, a runner-managed twentieth cycle
+Node renames run through **node-rename**, a runner-managed extra cycle
 that is not in the registry and not selectable via `--cycles`: the runner
 resolves each node's `previously:` alias against live state before scope
 enumeration (scope ids are kind-prefixed full paths built from node keys, so
@@ -58,7 +58,7 @@ sends the `path` alone and leaves display names untouched. The exception is
 a group whose policy manages the name (`groupSettings.name`): its managed
 value rides along so the rename and the settings agree.
 
-The 19 registry cycles, in registry order (`src/cli/registry.ts`):
+The 20 registry cycles, in registry order (`src/cli/registry.ts`):
 
 ## member-roles
 
@@ -275,6 +275,29 @@ variables.
   like a committed one; use that for values you'd rather not commit. With
   neither config value nor env var, the value is not diffed at all (the entry
   reconciles by presence, and a create writes an empty string).
+
+## pipeline-schedules
+
+Cron pipeline schedules on **project** nodes, from `pipelineSchedules[]`,
+keyed by `description` (GitLab gives schedules no natural key, so renaming a
+description is a delete + create). `gitlab-warden migrate` emits a
+ready-to-paste block for `on: schedule` workflows it translates.
+
+- Read: `GET /projects/:id/pipeline_schedules` (paginated), then one detail
+  GET per schedule for its variables (the list omits them) — the detail
+  response is the source of truth, fetched with bounded concurrency and
+  charged up front against the request budget. Duplicate live descriptions
+  are flagged with a plan NOTE naming the shadowed schedule ids (only the
+  last-listed duplicate is reconciled).
+- Apply: `POST` on create (variables POSTed to the new id), `PUT …/:sid` on
+  schedule drift, `DELETE …/:sid` on delete. A schedule's `variables` are
+  reconciled by key within the update; a live variable you did not declare
+  is deleted only when the node owns `pipeline-schedule`.
+- Refs compare normalized on both sides, so a declared `refs/heads/main`
+  converges against a live `main` and vice versa.
+- GitLab only lets a schedule's owner modify it: a 403 on a write is
+  re-raised with the `take_ownership` remediation
+  (`POST …/:sid/take_ownership`) instead of a bare status code.
 
 ## webhooks
 

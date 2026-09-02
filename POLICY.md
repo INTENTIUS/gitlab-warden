@@ -265,6 +265,17 @@ nodes:
       mergeRequestsDisableCommittersApproval: true
       requirePasswordToApprove: false
 
+    pipelineSchedules:                  # cycle: pipeline-schedules — project nodes only
+      - description: nightly-build      # identity key; unique per project
+        cron: "0 2 * * *"
+        cronTimezone: UTC
+        ref: main                       # short name; refs/heads/… also converges
+        active: true
+        variables:                      # reconciled by key within the schedule
+          - key: SCHEDULE_KIND
+            value: nightly
+            variableType: env_var       # env_var | file
+
     # pushRules, variables, webhooks, integrations, deployTokens, accessTokens,
     # protectedEnvironments, and securityPolicy are valid on project nodes too,
     # with the same shapes as shown on the group node above.
@@ -317,6 +328,7 @@ useful policy is one node with one slice, such as a group with `pushRules`.
 | `securityPolicy` | yes | yes | — |
 | `approvalRules` / `approvalSettings` | — | yes | — |
 | `variables` | yes | yes | — |
+| `pipelineSchedules` | — | yes | — |
 | `webhooks` | yes | yes | — |
 | `integrations` | yes | yes | — |
 | `baselines` | yes | — | — |
@@ -517,6 +529,21 @@ CI variables in **`variables[]`** are identified by `key` plus
 | `protected` | boolean | optional | ci-variables | Free | only exposed to protected branches/tags |
 | `masked` | boolean | optional | ci-variables | Free | masked in job logs |
 | `variableType` | `env_var` \| `file` | optional | ci-variables | Free | how the runner materializes it |
+
+Schedules in **`pipelineSchedules[]`** belong to projects and are matched
+by `description` (GitLab gives them no natural key, so renaming a
+description is a delete + create). Warden writes need schedule ownership;
+GitLab 403s a write to another user's schedule, and the apply error names
+the `take_ownership` remediation (see the [cycle catalog](CYCLES.md)).
+
+| Field | Type | Required / default | Cycle | Tier | Meaning |
+|---|---|---|---|---|---|
+| `description` | string | **required** (key) | pipeline-schedules | Free | schedule identity, unique per project (duplicate live descriptions are flagged with a plan NOTE) |
+| `cron` | string | **required** | pipeline-schedules | Free | cron expression, e.g. `0 2 * * *` |
+| `cronTimezone` | string | optional (GitLab default UTC) | pipeline-schedules | Free | timezone for the cron |
+| `ref` | string | **required** | pipeline-schedules | Free | branch or tag the scheduled pipeline runs on; `refs/heads/…` and the short name converge either way |
+| `active` | boolean | optional (GitLab default true) | pipeline-schedules | Free | whether the schedule fires |
+| `variables` | list | optional | pipeline-schedules | Free | variables injected into the scheduled pipeline (`key` + `value`, optional `variableType`), reconciled by key; a live variable you did not declare is deleted only when the node owns `pipeline-schedule` |
 
 Hooks in **`webhooks[]`** are matched by `url`; group webhooks are a Premium
 feature while project webhooks are Free.

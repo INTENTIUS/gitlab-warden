@@ -20,7 +20,7 @@ build time).
 |---|---|---|
 | `--config <path>` | **required** | governance config file (YAML, or JSON when the path ends in `.json`) |
 | `--mode dry-run\|apply` | `dry-run` | `dry-run` computes and prints the plan; `apply` mutates after guardrails pass |
-| `--cycles <name[,name…]>` | all 19 | comma-separated cycle names to run (see [CYCLES.md](CYCLES.md)); an unknown name is an error listing the known ones |
+| `--cycles <name[,name…]>` | all 20 | comma-separated cycle names to run (see [CYCLES.md](CYCLES.md)); an unknown name is an error listing the known ones |
 | `--base-url <url>` | `https://gitlab.com` | GitLab instance URL for self-managed, e.g. `https://gitlab.example.com` |
 | `--base-url-env <VAR>` | — | read the base URL from an env var instead (`--base-url` wins if both are given) |
 | `--token-env <VAR>` | `GITLAB_TOKEN` | env var holding the API token; the run fails (exit 2) if it is unset or empty |
