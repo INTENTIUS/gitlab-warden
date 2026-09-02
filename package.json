@@ -2,7 +2,7 @@
   "name": "@intentius/gitlab-warden",
   "version": "0.2.2",
   "type": "module",
-  "description": "Declarative governance for GitLab groups & projects — stateless, drift-correcting reconcile in CI (no Terraform state, no Ultimate)",
+  "description": "Declarative governance for GitLab groups & projects — stateless, drift-correcting reconcile in CI (no state file, no Ultimate)",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -24,6 +24,7 @@
   ],
   "scripts": {
     "tsc": "tsc --noEmit",
+    "lint:prose": "bash mkdocs-stage.sh && node scripts/lint-prose.mjs $(find docs -name '*.md')",
     "test": "vitest run",
     "test:e2e:run": "vitest run --config vitest.e2e.config.ts",
     "e2e:up": "bash e2e/bootstrap.sh",
@@ -34,6 +35,7 @@
   "devDependencies": {
     "@types/node": "^22.0.0",
     "esbuild": "^0.28.0",
+    "sentences": "^0.1.1",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"
   },

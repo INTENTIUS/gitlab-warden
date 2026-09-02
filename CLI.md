@@ -22,8 +22,8 @@ build time).
 | `--token-env <VAR>` | `GITLAB_TOKEN` | env var holding the API token; the run fails (exit 2) if it is unset or empty |
 | `--allow-guardrail-override` | off | apply even when a guardrail trips |
 
-Flags only — a positional argument is an error. Every flag except
-`--allow-guardrail-override` takes a value.
+The command accepts flags only; a positional argument is an error. Every flag
+except `--allow-guardrail-override` takes a value.
 
 ## Config loading
 
@@ -38,13 +38,13 @@ The token is sent as the `PRIVATE-TOKEN` header against `<base-url>/api/v4`
 (REST) and `<base-url>/api/graphql` (the GraphQL cycles). Use a personal
 access token or a group access token with:
 
-- **`api` scope** — required; the reconcile both reads and writes.
+- **`api` scope** (required; the reconcile both reads and writes).
 - **Owner** on declared group nodes and **Maintainer or above** on declared
   project nodes (member management, protected branches, tokens, and settings
   writes need those roles).
 - **Instance admin** for `kind: instance` nodes (`/application/settings`,
-  `/hooks`, `/admin/ci/variables` are admin-only and absent on GitLab.com —
-  there the instance-governance cycle simply manages nothing).
+  `/hooks`, and `/admin/ci/variables` are admin-only and absent on
+  GitLab.com, where the instance-governance cycle simply manages nothing).
 
 Never pass the token on the command line; export it and name the variable via
 `--token-env`.

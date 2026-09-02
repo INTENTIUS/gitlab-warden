@@ -4,19 +4,19 @@ warden is built to live in a pipeline next to the policy file: dry-run on
 merge requests, apply on the default branch, and a scheduled run to correct
 drift that happens between pushes (the push-rules cycle exists for exactly
 that). The exit codes make the wiring trivial: 0 clean, 1 guardrail block,
-2 config error, 3 runtime/apply failure — anything non-zero fails the job.
+2 config error, 3 runtime/apply failure; anything non-zero fails the job.
 
 ## Token setup (GitLab CI)
 
 1. Create a token with `api` scope and sufficient role on the declared nodes
    (see [SETUP.md](SETUP.md)). A **group access token** on the top governed
    group is a good fit: it isn't tied to a person.
-2. In the policy repo: Settings → CI/CD → Variables → add `WARDEN_TOKEN`,
-   **masked** and **protected** (protected means MR pipelines from forks and
-   unprotected branches never see it — which is also why the dry-run job below
-   works for same-repo MRs but not fork MRs).
-3. Do not use `CI_JOB_TOKEN` — its permissions are far too narrow for
-   governance writes.
+2. In the policy repo, open Settings > CI/CD > Variables and add a **masked**
+   and **protected** variable named `WARDEN_TOKEN` (protected means MR
+   pipelines from forks and unprotected branches never see it; that is also
+   why the dry-run job below works for same-repo MRs but not fork MRs).
+3. The predefined `CI_JOB_TOKEN` is no substitute; its permissions are far
+   too narrow for governance writes.
 
 `$CI_SERVER_URL` is predefined in every GitLab pipeline, so the same
 `.gitlab-ci.yml` works on gitlab.com and self-managed without edits.
@@ -73,19 +73,19 @@ governance:drift:
 
 Notes:
 
-- A guardrail block exits 1 and fails the apply job — that is the intended
-  behavior. Review the plan; if the deletions are really intended, re-run with
+- A guardrail block exits 1 and fails the apply job, which is the intended
+  behavior. Review the plan; if the deletions are intended, re-run with
   `--allow-guardrail-override` (ideally as a manual job, not a default).
 - Pin a version (`npx @intentius/gitlab-warden@0.2.2 …`) if you want
   reproducible pipelines.
-- Narrow a job with `--cycles` (e.g. a fast hourly `--cycles push-rules`
+- Narrow a job with `--cycles` (for example a fast hourly `--cycles push-rules`
   schedule plus a nightly full run) to stay well inside the 1000-request
   budget on large policies.
 
 ## From GitHub Actions
 
-If the policy repo lives on GitHub, the same commands work there — warden
-talks to GitLab over its API regardless of where it runs:
+If the policy repo lives on GitHub, the same commands work there, since
+warden talks to GitLab over its API regardless of where it runs:
 
 ```yaml
 name: governance

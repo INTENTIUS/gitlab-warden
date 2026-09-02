@@ -26,6 +26,7 @@ check: tsc test
 
 # Build the docs site locally (requires `pip install mkdocs-material`)
 docs:
+    npm run lint:prose
     ./mkdocs-stage.sh && mkdocs build --strict
 
 # Preview the docs site locally

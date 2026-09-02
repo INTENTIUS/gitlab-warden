@@ -1,5 +1,5 @@
 site_name: gitlab-warden
-site_description: Declarative governance for GitLab groups & projects — stateless, drift-correcting reconcile in CI (no Terraform state, no Ultimate)
+site_description: Declarative governance for GitLab groups & projects — stateless, drift-correcting reconcile in CI (no state file, no Ultimate)
 # The markdown lives at the repo root (for GitHub); `mkdocs-stage.sh` copies the curated
 # set into docs/ for the build. Run `just docs` (or the Pages workflow).
 docs_dir: docs

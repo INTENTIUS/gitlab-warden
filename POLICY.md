@@ -19,9 +19,9 @@ cycles, the guardrails) serves the policy. It is the one file you must author.
 Two behaviors worth knowing before you write one:
 
 - **Deletes are opt-in, per node.** The diff only emits a delete for a live
-  entry absent from config when warden owns that resource — and ownership is
+  entry absent from config when warden owns that resource, and ownership is
   declared in the policy itself, per node, via `owned`. With `owned` absent
-  (the default) a node's plans contain **creates and updates only** — a live
+  (the default) a node's plans contain **creates and updates only**; a live
   member, webhook, or variable you did not declare is left alone. `owned: true`
   claims every collection warden reconciles on that node; a list such as
   `owned: [member, webhook]` claims only those resource types (the `[type]`
@@ -36,7 +36,8 @@ Two behaviors worth knowing before you write one:
 ## Access levels
 
 Config accepts either the name or the raw GitLab number anywhere an access
-level appears (`src/config/access-levels.ts`, [DESIGN.md](DESIGN.md) §2):
+level appears (see `src/config/access-levels.ts` and the
+[design doc](DESIGN.md) §2):
 
 | Name | Number |
 |---|---|
@@ -250,8 +251,8 @@ nodes:
         permissions: [admin_merge_request]
 ```
 
-The smallest valid node is just `kind:` — it manages nothing. The smallest
-useful policy is one node with one slice, e.g. a group with `pushRules`.
+The smallest valid node is just `kind:`, which manages nothing. The smallest
+useful policy is one node with one slice, such as a group with `pushRules`.
 
 ## Which slices apply to which node kinds
 
@@ -283,18 +284,19 @@ no-ops on that kind).
 
 ## Field reference
 
-Types below are the config shapes; "key" marks the identity field the diff
+Types below are the config shapes; "key" names the identity field the diff
 uses to match config entries against live entries. Tier "Free" means CE works.
 
-**`nodes{}`** — the top-level map. Key = full path of the group/project (a
-label for instance nodes). Value = one node:
+The top-level map is **`nodes{}`**. Its key is the full path of the
+group/project (a label for instance nodes), and each value is one node:
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `kind` | `group` \| `project` \| `instance` | **required** | all | Free | selects which endpoints every cycle uses for this node |
 | `owned` | boolean \| string[] | optional; default: no deletes | all | Free | delete gate for this node's collections: `true` = warden owns everything it reconciles here (live entries absent from config become deletes); a list owns only those resource types (the `[type]` labels in plans — `member`, `webhook`, `variable`, …; the full vocabulary is `RESOURCE_TYPE_ORDER` in `src/reconcile/diff.ts`); absent/`false` = creates and updates only |
 
-**`groupSettings`** (group nodes; `PUT /groups/:id`, partial update)
+Group settings live in **`groupSettings`**, a partial update of
+`PUT /groups/:id`.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -307,7 +309,8 @@ label for instance nodes). Value = one node:
 | `preventForkingOutsideGroup` | boolean | optional | group-settings | Premium | forbid forks outside the group |
 | `mentionsDisabled` | boolean | optional | group-settings | Free | disable group mentions |
 
-**`projectSettings`** (project nodes; `PUT /projects/:id`, partial update)
+Project settings follow the same pattern in **`projectSettings`**, a
+partial `PUT /projects/:id`.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -321,8 +324,9 @@ label for instance nodes). Value = one node:
 | `removeSourceBranchAfterMerge` | boolean | optional | project-settings | Free | default the delete-source-branch checkbox on |
 | `topics` | string[] | optional | project-settings | Free | project topics (compared order-insensitively) |
 
-**`members[]`** (group + project nodes; diffed against the **direct** roster
-only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2)
+A **`members[]`** list declares the direct members of a group or project;
+the diff never treats an inherited member as drift (see the
+[design doc](DESIGN.md) §2).
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -331,7 +335,7 @@ only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2
 | `memberRoleId` | number | optional | members | Ultimate | custom member role id, pairs with the base `accessLevel` |
 | `expiresAt` | string (date) | optional | members | Free | membership expiry; sent on create |
 
-**`protectedBranches[]`** (project nodes)
+Each **`protectedBranches[]`** entry protects one branch on a project.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -342,14 +346,14 @@ only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2
 | `allowForcePush` | boolean | optional | protected-branches | Free | permit force-push to the protected branch |
 | `codeOwnerApprovalRequired` | boolean | optional | protected-branches | Premium | require CODEOWNERS approval (403 on apply lands in `failed[]`) |
 
-**`protectedTags[]`** (project nodes)
+With **`protectedTags[]`**, a project protects tag names or globs.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `name` | string | **required** (key) | protected-tags | Free | tag name or glob |
 | `createAccessLevel` | number | optional | protected-tags | Free | minimum level allowed to create the tag |
 
-**`protectedEnvironments[]`** (group + project nodes)
+Groups and projects both accept **`protectedEnvironments[]`**.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -357,7 +361,7 @@ only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2
 | `deployAccessLevels` | number[] | optional | protected-environments | Premium | levels allowed to deploy (compared order-insensitively) |
 | `requiredApprovalCount` | number | optional | protected-environments | Premium | required deployment approvals |
 
-**`deployKeys[]`** (project nodes)
+Only projects carry **`deployKeys[]`**.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -365,7 +369,8 @@ only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2
 | `key` | string | **required** | deploy-keys-tokens | Free | public key, set on create (write-only) |
 | `canPush` | boolean | optional | deploy-keys-tokens | Free | the only mutable field (updated in place) |
 
-**`deployTokens[]`** (group + project nodes; immutable — reconciled by presence)
+Deploy tokens under **`deployTokens[]`** are immutable and reconciled by
+presence on groups and projects.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -374,8 +379,8 @@ only — an inherited member never becomes drift, see [DESIGN.md](DESIGN.md) §2
 | `expiresAt` | string (date) | optional | deploy-keys-tokens | Free | expiry, sent on create |
 | `username` | string | optional | deploy-keys-tokens | Free | custom username, sent on create |
 
-**`accessTokens[]`** (group + project nodes; immutable — reconciled by presence;
-the secret is returned on create only)
+Bot credentials in **`accessTokens[]`** are likewise create-and-revoke only;
+the secret is returned on create and never again.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -387,8 +392,8 @@ the secret is returned on create only)
 \* Project access tokens work on Free self-managed; on GitLab.com,
 group/project access tokens require a paid namespace.
 
-**`pushRules`** (group + project nodes; the flagship — see
-[CYCLES.md](CYCLES.md))
+Push rules in **`pushRules`** are the flagship for groups and projects alike
+(see the [cycle catalog](CYCLES.md)).
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -403,13 +408,14 @@ group/project access tokens require a paid namespace.
 | `rejectUnsignedCommits` | boolean | optional | push-rules | Premium | require signed commits |
 | `rejectNonDcoCommits` | boolean | optional | push-rules | Premium | require DCO sign-off |
 
-**`jobTokenScope`** (project nodes)
+A project's **`jobTokenScope`** hardens its CI job token.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `inboundEnabled` | boolean | optional | advanced-protections | Free | require other projects to be allowlisted before they can use this project's CI job token |
 
-**`memberRoles[]`** (group + instance nodes; presence-only, keyed by name)
+Custom roles in **`memberRoles[]`** are presence-only and matched by name on
+group and instance nodes.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -417,8 +423,9 @@ group/project access tokens require a paid namespace.
 | `baseAccessLevel` | name \| number | **required** | member-roles | Ultimate | base role the custom role extends |
 | `permissions` | string[] | optional | member-roles | Ultimate | fine-grained permissions, e.g. `read_code`, `admin_merge_request` |
 
-**`complianceFrameworks[]`** (top-level group nodes; GraphQL; best-effort —
-unvalidated against a live Ultimate instance, the hermetic e2e runs CE)
+Compliance definitions in **`complianceFrameworks[]`** live on top-level
+groups and go through GraphQL as a best-effort surface (unvalidated against a
+live Ultimate instance; the hermetic e2e runs CE).
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -427,14 +434,14 @@ unvalidated against a live Ultimate instance, the hermetic e2e runs CE)
 | `color` | string (hex) | optional | compliance-frameworks | Premium/Ultimate | label color, e.g. `#1aaa55` |
 | `pipelineConfigurationFullPath` | string | optional | compliance-frameworks | Ultimate | enforced pipeline config, `file@group/project` |
 
-**`securityPolicy`** (group + project nodes; GraphQL; best-effort — unvalidated
-against a live Ultimate instance)
+The **`securityPolicy`** link on groups and projects also rides GraphQL, with
+the same caveat about live Ultimate validation.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `policyProject` | string | optional | security-policies | Ultimate | full path of the linked security policy project; empty/unset → unlink. The policy *content* lives in that project and is not reconciled here. |
 
-**`approvalRules[]`** (project nodes)
+Approval rules in **`approvalRules[]`** belong to projects.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -444,7 +451,8 @@ against a live Ultimate instance)
 | `groupIds` | number[] | optional | mr-approvals | Premium | eligible approver group ids (order-insensitive) |
 | `protectedBranchIds` | number[] | optional | mr-approvals | Premium | protected branches the rule applies to (order-insensitive) |
 
-**`approvalSettings`** (project nodes; single object, `POST /projects/:id/approvals`)
+So does the single **`approvalSettings`** object, applied via
+`POST /projects/:id/approvals`.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -454,7 +462,8 @@ against a live Ultimate instance)
 | `mergeRequestsDisableCommittersApproval` | boolean | optional | mr-approvals | Premium | forbid committers approving |
 | `requirePasswordToApprove` | boolean | optional | mr-approvals | Premium | re-authenticate to approve |
 
-**`variables[]`** (group + project nodes; keyed by `key` + `environmentScope`)
+CI variables in **`variables[]`** are identified by `key` plus
+`environmentScope` on groups and projects.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -465,8 +474,8 @@ against a live Ultimate instance)
 | `masked` | boolean | optional | ci-variables | Free | masked in job logs |
 | `variableType` | `env_var` \| `file` | optional | ci-variables | Free | how the runner materializes it |
 
-**`webhooks[]`** (group + project nodes; keyed by `url`. Group webhooks are a
-Premium feature; project webhooks are Free.)
+Hooks in **`webhooks[]`** are matched by `url`; group webhooks are a Premium
+feature while project webhooks are Free.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -479,8 +488,8 @@ Premium feature; project webhooks are Free.)
 | `enableSslVerification` | boolean | optional | webhooks | Free | verify TLS on delivery |
 | `token` | string | optional | webhooks | Free | write-only secret; never read back, so never diffed |
 
-**`integrations[]`** (group + project nodes; keyed by the integration slug,
-e.g. `slack`, `jira`)
+Entries in **`integrations[]`** are matched by the integration slug, such as
+`slack` or `jira`.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -488,7 +497,8 @@ e.g. `slack`, `jira`)
 | `active` | boolean | optional | integrations | Free | enabled state (the diffable part) |
 | `properties` | map | optional | integrations | Free | integration settings; write-only (GitLab masks them), so property-only drift isn't detected — they are re-applied on every create/update |
 
-**`baselines[]`** (group nodes; existence-only provisioning of children)
+Children under **`baselines[]`** are provisioned by existence only, on
+groups.
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
@@ -498,27 +508,29 @@ e.g. `slack`, `jira`)
 | `visibility` | `private` \| `internal` \| `public` | optional | baseline | Free | visibility on create |
 | `template` | string | optional | baseline | Free/Premium | project template name to generate from (projects only; custom group templates are Premium) |
 
-Existence only: once the child exists, its settings are the settings cycles'
-concern — declare the child as its own node to manage it.
+Once a child exists, its settings are the settings cycles' concern; declare
+the child as its own node to manage it.
 
-**`instanceSettings`** (instance nodes; self-managed only, requires an admin token)
+Instance-wide settings go in **`instanceSettings`** (self-managed only;
+requires an admin token).
 
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | *(any key)* | any | optional | instance-governance | Free (self-managed) | generic passthrough: each key is compared against `GET /application/settings` and applied via `PUT` verbatim, snake_case as GitLab names it (e.g. `signup_enabled`) |
 
-**`systemHooks[]`** (instance nodes) — same shape as `webhooks[]`; reconciled
-against `GET/POST/DELETE /hooks`. System hooks have no update endpoint, so
+System hooks in **`systemHooks[]`** share the `webhooks[]` shape and are
+reconciled against `GET/POST/DELETE /hooks`; no update endpoint exists, so
 drift is fixed by delete + re-create.
 
-**`instanceVariables[]`** (instance nodes) — same shape as `variables[]`
-(minus meaningful `environmentScope`); reconciled against
+Instance variables in **`instanceVariables[]`** look like `variables[]`
+without a meaningful `environmentScope`, and they live at
 `/admin/ci/variables`.
 
 ## What a reconcile does with this file
 
-For every declared node and every selected cycle: fetch live state, build the
-desired slice, diff (selective-by-omission, ownership-gated deletes),
-guardrail-check, then either print the plan (`--mode dry-run`, the default) or
-apply it (`--mode apply`). See [CLI.md](CLI.md) for flags and
-[CYCLES.md](CYCLES.md) for what each cycle touches.
+For every declared node and every selected cycle, warden fetches live state
+and builds the desired slice. It then diffs the two (selective-by-omission,
+with ownership-gated deletes) and checks guardrails. `--mode dry-run`, the
+default, prints the plan; `--mode apply` executes it. See the
+[CLI reference](CLI.md) for flags and the [cycle catalog](CYCLES.md) for what
+each cycle touches.
