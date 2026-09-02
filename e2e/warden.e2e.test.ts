@@ -428,6 +428,70 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
     });
   });
 
+  applySuite("smoke: pipeline-schedules", () => {
+    const node = (): GovernanceConfig["nodes"] => ({
+      [PROJECT_PATH]: {
+        kind: "project",
+        pipelineSchedules: [
+          {
+            description: "smoke-nightly",
+            cron: "0 2 * * *",
+            cronTimezone: "UTC",
+            ref: "main",
+            active: true,
+            variables: [{ key: "SCHEDULE_KIND", value: "nightly" }],
+          },
+        ],
+      },
+    });
+
+    async function liveSchedules(): Promise<Array<{ id: number; description: string; cron: string }>> {
+      return client.paginate(`/projects/${projectId}/pipeline_schedules`);
+    }
+
+    it("creates a declared schedule with its variables", async () => {
+      const cr = applied(await reconcile("pipeline-schedules", node(), "apply"));
+      expect(cr.counts.create).toBe(1);
+      const live = await liveSchedules();
+      const made = live.find((s) => s.description === "smoke-nightly");
+      expect(made?.cron).toBe("0 2 * * *");
+      const full = await client.request<{ variables?: Array<{ key: string; value: string }> }>(
+        "GET",
+        `/projects/${projectId}/pipeline_schedules/${made!.id}`,
+      );
+      expect(full.variables).toEqual([{ key: "SCHEDULE_KIND", value: "nightly", variable_type: "env_var" }]);
+    });
+
+    it("re-run converges to an empty plan", async () => {
+      converged(await reconcile("pipeline-schedules", node(), "dry-run"));
+    });
+
+    it("corrects out-of-band cron and variable drift", async () => {
+      const sid = (await liveSchedules()).find((s) => s.description === "smoke-nightly")!.id;
+      await client.request("PUT", `/projects/${projectId}/pipeline_schedules/${sid}`, { cron: "0 5 * * *" });
+      await client.request("PUT", `/projects/${projectId}/pipeline_schedules/${sid}/variables/SCHEDULE_KIND`, {
+        value: "drifted",
+      });
+      const cr = applied(await reconcile("pipeline-schedules", node(), "apply"));
+      expect(cr.counts.update).toBe(1);
+      const after = await client.request<{ cron: string; variables?: Array<{ key: string; value: string }> }>(
+        "GET",
+        `/projects/${projectId}/pipeline_schedules/${sid}`,
+      );
+      expect(after.cron).toBe("0 2 * * *");
+      expect(after.variables?.find((v) => v.key === "SCHEDULE_KIND")?.value).toBe("nightly");
+    });
+
+    it("deletes an undeclared schedule under `owned`", async () => {
+      const ownedNode: GovernanceConfig["nodes"] = {
+        [PROJECT_PATH]: { kind: "project", owned: ["pipeline-schedule"], pipelineSchedules: [] },
+      };
+      const cr = applied(await reconcile("pipeline-schedules", ownedNode, "apply", { removalDeltaCapFraction: 1 }));
+      expect(cr.counts.delete).toBe(1);
+      expect(await liveSchedules()).toEqual([]);
+    });
+  });
+
   applySuite("smoke: webhooks", () => {
     const HOOK_URL = "https://smoke.example.com/hook";
     const node = (): GovernanceConfig["nodes"] => ({

@@ -154,6 +154,27 @@ export interface LiveVariable {
   variableType?: string;
 }
 
+export interface LivePipelineScheduleVariable {
+  key: string;
+  value?: string;
+  variableType?: string;
+}
+
+export interface LivePipelineSchedule {
+  /** Schedule id (apply path; never diffed). */
+  id?: number;
+  /** The identity key. */
+  description: string;
+  cron?: string;
+  cronTimezone?: string;
+  ref?: string;
+  active?: boolean;
+  /** From the per-schedule GET (the list endpoint omits variables). */
+  variables?: LivePipelineScheduleVariable[];
+  /** Owner username (take_ownership caveat; never diffed). */
+  owner?: string;
+}
+
 export interface LiveIntegration {
   name: string;
   active?: boolean;
@@ -190,6 +211,7 @@ export interface LiveNodeState {
   approvalRules?: LiveApprovalRule[];
   approvalSettings?: LiveApprovalSettings;
   variables?: LiveVariable[];
+  pipelineSchedules?: LivePipelineSchedule[];
   webhooks?: LiveWebhook[];
   integrations?: LiveIntegration[];
   instanceSettings?: Record<string, unknown>;

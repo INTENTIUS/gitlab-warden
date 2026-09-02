@@ -69,6 +69,65 @@ describe("diff — collections", () => {
   });
 });
 
+describe("diff — pipeline schedules (keyed by description)", () => {
+  const proj = "project:acme/api";
+  const nightly = { description: "nightly-build", cron: "0 2 * * *", ref: "main" };
+
+  it("absent live → create; converged → no entries", () => {
+    expect(entriesByType(diff(proj, { kind: "project", pipelineSchedules: [nightly] }, {}))).toEqual([
+      "create pipeline-schedule nightly-build",
+    ]);
+    const converged = diff(
+      proj,
+      { kind: "project", pipelineSchedules: [{ ...nightly, active: true, variables: [{ key: "K", value: "v" }] }] },
+      { pipelineSchedules: [{ id: 1, ...nightly, active: true, variables: [{ key: "K", value: "v", variableType: "env_var" }] }] },
+    );
+    expect(converged.entries).toHaveLength(0);
+  });
+
+  it("cron/ref/active drift → update with only the drifted fields", () => {
+    const cs = diff(
+      proj,
+      { kind: "project", pipelineSchedules: [{ ...nightly, active: false }] },
+      { pipelineSchedules: [{ id: 1, description: "nightly-build", cron: "0 3 * * *", ref: "main", active: true }] },
+    );
+    expect(cs.entries[0]).toMatchObject({ kind: "update", resourceType: "pipeline-schedule", key: "nightly-build" });
+    expect(cs.entries[0]!.fields!.map((f) => f.field).sort()).toEqual(["active", "cron"]);
+  });
+
+  it("variables drift by key → a single `variables` field change; undeclared variables left alone", () => {
+    const live: LiveNodeState = {
+      pipelineSchedules: [{ id: 1, ...nightly, variables: [{ key: "K", value: "old" }, { key: "STALE", value: "x" }] }],
+    };
+    const cs = diff(proj, { kind: "project", pipelineSchedules: [{ ...nightly, variables: [{ key: "K", value: "new" }] }] }, live);
+    expect(cs.entries[0]!.fields).toEqual([
+      { field: "variables", before: live.pipelineSchedules![0]!.variables, after: [{ key: "K", value: "new" }] },
+    ]);
+    // No `variables` declared → the live variables are not managed.
+    expect(diff(proj, { kind: "project", pipelineSchedules: [nightly] }, live).entries).toHaveLength(0);
+  });
+
+  it("renaming a description is a delete + create (ownership-gated)", () => {
+    const live: LiveNodeState = { pipelineSchedules: [{ id: 1, description: "nightly", cron: "0 2 * * *", ref: "main" }] };
+    const cs = diff(proj, { kind: "project", pipelineSchedules: [nightly] }, live, { isOwned: () => true });
+    expect(entriesByType(cs).sort()).toEqual(["create pipeline-schedule nightly-build", "delete pipeline-schedule nightly"]);
+    // Without ownership, the old schedule is left alone.
+    const gated = diff(proj, { kind: "project", pipelineSchedules: [nightly] }, live);
+    expect(entriesByType(gated)).toEqual(["create pipeline-schedule nightly-build"]);
+  });
+
+  it("live schedules count into the removal-cap denominator when the slice is declared", () => {
+    const live: LiveNodeState = {
+      pipelineSchedules: [
+        { id: 1, description: "a", cron: "0 1 * * *", ref: "main" },
+        { id: 2, description: "b", cron: "0 2 * * *", ref: "main" },
+      ],
+    };
+    expect(diff(proj, { kind: "project", pipelineSchedules: [] }, live).liveManagedTotal).toBe(2);
+    expect(diff(proj, { kind: "project" }, live).liveManagedTotal).toBe(0); // undeclared → not counted
+  });
+});
+
 describe("diff — ChangeSet shape", () => {
   it("carries the node id and stable ordering", () => {
     const cs = diff(node, { kind: "group", members: [{ user: "z", accessLevel: 30 }], groupSettings: { description: "d" } }, {});

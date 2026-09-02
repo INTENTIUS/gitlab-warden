@@ -16,6 +16,8 @@ import { parse as parseYaml } from "yaml";
 import { parseMigrateArgs } from "./args.js";
 import { runMigrate, extractSchedules, renderScheduleHint, renderStitchedRoot } from "./migrate.js";
 import { CliError } from "../cli-error.js";
+import { diff } from "../reconcile/diff.js";
+import type { NodeConfig, PipelineScheduleConfig } from "../config/types.js";
 
 const FIXTURES = join(__dirname, "fixtures");
 
@@ -129,6 +131,31 @@ describe("runMigrate", () => {
     expect(outcome.stderr).toContain('cron: "0 6 * * 1"');
     expect(outcome.stderr).toContain('cron: "30 2 * * *"');
     expect(outcome.stderr).toContain("ref: main");
+  });
+
+  it("hint output parses as a valid pipelineSchedules policy fragment (fixture)", async () => {
+    // The 01-triggers fixture carries an `on: schedule` trigger, so migrating
+    // it fires MIG-ON-SCHEDULE and prints the policy block. The block must be
+    // consumable as-is by the pipeline-schedules cycle: YAML-parse the
+    // fragment, shape-check it as PipelineScheduleConfig[], and prove the
+    // reconcile diff plans a create per schedule from it.
+    const src = join(tmp, "fixture-hint.yml");
+    cpSync(join(FIXTURES, "01-triggers", "input.yml"), src);
+    const outcome = await runMigrate(parseMigrateArgs([src]));
+    const start = outcome.stderr.indexOf("pipelineSchedules:");
+    expect(start).toBeGreaterThan(-1);
+    const fragment = parseYaml(outcome.stderr.slice(start)) as { pipelineSchedules: PipelineScheduleConfig[] };
+    expect(Array.isArray(fragment.pipelineSchedules)).toBe(true);
+    expect(fragment.pipelineSchedules.length).toBeGreaterThan(0);
+    for (const s of fragment.pipelineSchedules) {
+      expect(typeof s.description).toBe("string");
+      expect(typeof s.cron).toBe("string");
+      expect(typeof s.ref).toBe("string");
+    }
+    const node: NodeConfig = { kind: "project", pipelineSchedules: fragment.pipelineSchedules };
+    const cs = diff("project:acme/api", node, {});
+    expect(cs.entries).toHaveLength(fragment.pipelineSchedules.length);
+    expect(cs.entries.every((e) => e.kind === "create" && e.resourceType === "pipeline-schedule")).toBe(true);
   });
 
   it("--strict escalates needs-review findings to exit 1", async () => {

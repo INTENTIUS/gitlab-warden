@@ -42,6 +42,8 @@ import type {
   ApprovalRuleConfig,
   ApprovalSettings,
   VariableConfig,
+  PipelineScheduleConfig,
+  PipelineScheduleVariableConfig,
   WebhookConfig,
   IntegrationConfig,
   BaselineConfig,
@@ -64,6 +66,8 @@ import type {
   LiveApprovalRule,
   LiveApprovalSettings,
   LiveVariable,
+  LivePipelineSchedule,
+  LivePipelineScheduleVariable,
   LiveWebhook,
   LiveIntegration,
 } from "./live.js";
@@ -97,6 +101,7 @@ export const RESOURCE_TYPE_ORDER = [
   "compliance-framework",
   "approval-rule",
   "variable",
+  "pipeline-schedule",
   "webhook",
   "integration",
   "instance-settings",
@@ -134,6 +139,7 @@ const LIVE_CAP_COLLECTIONS = [
   "complianceFrameworks",
   "approvalRules",
   "variables",
+  "pipelineSchedules",
   "webhooks",
   "integrations",
   "instanceVariables",
@@ -176,6 +182,7 @@ export function diff(
   diffComplianceFrameworks(desired.complianceFrameworks, live.complianceFrameworks ?? [], opts, entries);
   diffApprovalRules(desired.approvalRules, live.approvalRules ?? [], opts, entries);
   diffVariables(desired.variables, live.variables ?? [], opts, entries);
+  diffPipelineSchedules(desired.pipelineSchedules, live.pipelineSchedules ?? [], opts, entries);
   diffWebhooks(desired.webhooks, live.webhooks ?? [], opts, entries);
   diffIntegrations(desired.integrations, live.integrations ?? [], opts, entries);
   diffObject("instance-settings", desired.instanceSettings, live.instanceSettings, desired.instanceSettings ? Object.keys(desired.instanceSettings) : [], entries);
@@ -543,6 +550,58 @@ function diffVariablesAs(
       if (dv.value !== undefined && dv.value !== lv.value) fields.push({ field: "value", before: lv.value, after: dv.value });
       for (const f of ["protected", "masked", "variableType"] as const) {
         if (dv[f] !== undefined && dv[f] !== lv[f]) fields.push({ field: f, before: lv[f], after: dv[f] });
+      }
+      return fields;
+    },
+    opts,
+    out,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline schedules (keyed by description; live id carried for apply)
+// ---------------------------------------------------------------------------
+
+const SCHEDULE_FIELDS = ["cron", "cronTimezone", "ref", "active"];
+
+/**
+ * Whether a schedule's declared variables are converged with live, compared by
+ * key. Selective per field: `variableType` is compared only when declared (live
+ * always reports GitLab's default "env_var", which an omitted type must not
+ * fight).
+ */
+function scheduleVarsConverged(
+  desired: PipelineScheduleVariableConfig[],
+  live: LivePipelineScheduleVariable[],
+): boolean {
+  if (desired.length !== live.length) return false;
+  const have = new Map(live.map((v) => [v.key, v]));
+  for (const d of desired) {
+    const l = have.get(d.key);
+    if (!l) return false;
+    if (d.value !== l.value) return false;
+    if (d.variableType !== undefined && d.variableType !== l.variableType) return false;
+  }
+  return true;
+}
+
+function diffPipelineSchedules(
+  desired: PipelineScheduleConfig[] | undefined,
+  live: LivePipelineSchedule[],
+  opts: DiffOptions,
+  out: ChangeSetEntry[],
+): void {
+  if (desired === undefined) return;
+  diffCollection<PipelineScheduleConfig, LivePipelineSchedule>({
+    resourceType: "pipeline-schedule",
+    desired: new Map(desired.map((s) => [s.description, s])),
+    live: new Map(live.map((s) => [s.description, s])),
+    compareFields: (ds, ls) => {
+      const fields = diffFields(ds as unknown as Record<string, unknown>, ls as unknown as Record<string, unknown>, SCHEDULE_FIELDS);
+      // Variables reconciled by key — selective by omission like every slice:
+      // an undeclared `variables` leaves live variables alone.
+      if (ds.variables !== undefined && !scheduleVarsConverged(ds.variables, ls.variables ?? [])) {
+        fields.push({ field: "variables", before: ls.variables ?? [], after: ds.variables });
       }
       return fields;
     },

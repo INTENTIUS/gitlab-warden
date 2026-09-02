@@ -188,6 +188,40 @@ export interface VariableConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Pipeline schedules (project nodes)
+// ---------------------------------------------------------------------------
+
+/** A variable passed to a scheduled pipeline. Keyed by `key` within its schedule. */
+export interface PipelineScheduleVariableConfig {
+  key: string;
+  value: string;
+  /** "env_var" | "file". */
+  variableType?: string;
+}
+
+/**
+ * A project pipeline schedule (`/projects/:id/pipeline_schedules`). Keyed by
+ * `description` — GitLab gives schedules no natural key, so renaming a
+ * description is a delete + create, not a rename. Schedules created by warden
+ * are owned by the token user; updating a schedule another user created may
+ * first need `POST .../take_ownership` (see CYCLES.md).
+ */
+export interface PipelineScheduleConfig {
+  /** The identity key; unique per project. */
+  description: string;
+  /** Cron expression, e.g. "0 2 * * *". */
+  cron: string;
+  /** Timezone for the cron (GitLab default UTC). */
+  cronTimezone?: string;
+  /** Branch or tag the scheduled pipeline runs on. */
+  ref: string;
+  /** Whether the schedule fires (GitLab default true). */
+  active?: boolean;
+  /** Variables injected into the scheduled pipeline, reconciled by key. */
+  variables?: PipelineScheduleVariableConfig[];
+}
+
+// ---------------------------------------------------------------------------
 // Integrations (generic)
 // ---------------------------------------------------------------------------
 
@@ -356,6 +390,8 @@ export interface NodeConfig {
   approvalRules?: ApprovalRuleConfig[];
   approvalSettings?: ApprovalSettings;
   variables?: VariableConfig[];
+  /** Project pipeline schedules (`kind: "project"`), keyed by description. */
+  pipelineSchedules?: PipelineScheduleConfig[];
   webhooks?: WebhookConfig[];
   integrations?: IntegrationConfig[];
   baselines?: BaselineConfig[];

@@ -18,6 +18,7 @@ import { protectedEnvironmentsCycle } from "./protected-environments.js";
 import { deployKeysTokensCycle } from "./deploy-keys-tokens.js";
 import { accessTokensCycle } from "./access-tokens.js";
 import { securityPoliciesCycle } from "./security-policies.js";
+import { pipelineSchedulesCycle } from "./pipeline-schedules.js";
 
 const INSTANCE = "instance:gitlab.example.com";
 
@@ -34,6 +35,7 @@ const instanceConfig: NodeConfig = {
   deployTokens: [{ name: "t" }],
   accessTokens: [{ name: "bot" }],
   securityPolicy: { policyProject: "acme/policies" },
+  pipelineSchedules: [{ description: "nightly", cron: "0 2 * * *", ref: "main" }],
 };
 
 const cycles: Array<{ cycle: Cycle<Record<string, never>>; slices: Array<keyof NodeConfig> }> = [
@@ -46,6 +48,7 @@ const cycles: Array<{ cycle: Cycle<Record<string, never>>; slices: Array<keyof N
   { cycle: deployKeysTokensCycle as Cycle<Record<string, never>>, slices: ["deployKeys", "deployTokens"] },
   { cycle: accessTokensCycle as Cycle<Record<string, never>>, slices: ["accessTokens"] },
   { cycle: securityPoliciesCycle as Cycle<Record<string, never>>, slices: ["securityPolicy"] },
+  { cycle: pipelineSchedulesCycle as Cycle<Record<string, never>>, slices: ["pipelineSchedules"] },
 ];
 
 describe("group/project cycles no-op on instance nodes", () => {

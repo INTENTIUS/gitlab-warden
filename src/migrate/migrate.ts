@@ -87,9 +87,9 @@ export function extractSchedules(content: string, sourceFile: string): DroppedSc
 
 /**
  * Render the ready-to-paste `pipelineSchedules:` policy block for schedules the
- * translation dropped. Today it documents the manual GitLab UI step precisely;
- * once the phase 2 `pipeline-schedules` cycle lands, the same block becomes
- * governed state warden reconciles.
+ * translation dropped. The `pipeline-schedules` reconcile cycle consumes this
+ * exact shape: declared on a project node, the schedules become governed,
+ * drift-corrected state.
  */
 export function renderScheduleHint(schedules: DroppedSchedule[]): string {
   const lines: string[] = [
@@ -99,8 +99,8 @@ export function renderScheduleHint(schedules: DroppedSchedule[]): string {
     "workflow.rules gate on $CI_PIPELINE_SOURCE == \"schedule\", so a pipeline",
     "schedule must exist for those jobs to ever run.",
     "",
-    "Ready-to-paste policy block (the upcoming pipeline-schedules cycle",
-    "reconciles exactly this shape; until then, create the schedules by hand):",
+    "Ready-to-paste policy block — declare it on the project node and the",
+    "pipeline-schedules cycle reconciles it (gitlab-warden reconcile):",
     "",
     "pipelineSchedules:",
   ];
@@ -119,7 +119,7 @@ export function renderScheduleHint(schedules: DroppedSchedule[]): string {
 
 /** Remediation for the lossy rules, condensed from chant's migrate report. */
 const REMEDIATION: Record<string, string> = {
-  "MIG-ON-SCHEDULE": "create a pipeline schedule (Project Settings > CI/CD > Pipeline schedules); see the pipelineSchedules block below",
+  "MIG-ON-SCHEDULE": "declare the pipelineSchedules block below on the project node; the pipeline-schedules cycle reconciles it",
   "MIG-ON-DISPATCH": "convert workflow_dispatch inputs to spec:inputs (GitLab 17+) and give every input a default",
   "MIG-ON-NON-GIT": "replace issue/MR/discussion triggers with gitlab-triage on a schedule, or webhooks + an external service",
   "MIG-PERMISSIONS-001": "configure CI/CD token access at Project Settings > CI/CD > Token Access",

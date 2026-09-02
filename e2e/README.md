@@ -29,6 +29,7 @@ instead.
 | protected-branches | yes | yes | yes | yes (re-protect) | yes | — |
 | protected-tags | yes | yes | yes | yes (re-protect) | yes | — |
 | ci-variables | yes | yes | yes | yes | yes | — |
+| pipeline-schedules | yes | yes (schedule + variables) | yes | yes (cron + variable) | yes | — |
 | webhooks | yes | yes (+ `previously:` URL rename keeps the hook id) | yes | yes | yes | — |
 | node-rename (`previously:` on a node) | n/a (runner probe) | yes (project + group; same id after) | yes | n/a | n/a (never deletes) | — |
 | deploy-keys-tokens | yes | yes (key + token) | yes | yes (can_push) | yes (both) | — |

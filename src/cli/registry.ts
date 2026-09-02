@@ -25,6 +25,7 @@ import { instanceGovernanceCycle } from "../cycles/instance-governance.js";
 import { memberRolesCycle } from "../cycles/member-roles.js";
 import { complianceFrameworksCycle } from "../cycles/compliance-frameworks.js";
 import { securityPoliciesCycle } from "../cycles/security-policies.js";
+import { pipelineSchedulesCycle } from "../cycles/pipeline-schedules.js";
 
 export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [memberRolesCycle.name]: memberRolesCycle,
@@ -43,6 +44,7 @@ export const CYCLE_REGISTRY: Record<string, Cycle> = {
   [protectedBranchesCycle.name]: protectedBranchesCycle,
   [pushRulesCycle.name]: pushRulesCycle,
   [ciVariablesCycle.name]: ciVariablesCycle,
+  [pipelineSchedulesCycle.name]: pipelineSchedulesCycle,
   [webhooksCycle.name]: webhooksCycle,
   [baselineCycle.name]: baselineCycle,
   [mrApprovalsCycle.name]: mrApprovalsCycle,
