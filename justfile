@@ -17,6 +17,10 @@ test *args:
 build:
     npm run build
 
+# Dogfood: audit our own config with chant (CI's `dogfood-audit` job)
+audit:
+    npx chant audit . --fail-on merge-worthy
+
 # Install dependencies (clean, lockfile-faithful)
 install:
     npm ci
