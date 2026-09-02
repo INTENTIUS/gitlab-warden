@@ -45,6 +45,7 @@ import type {
   WebhookConfig,
   IntegrationConfig,
   BaselineConfig,
+  NodeRenameIntent,
 } from "../config/types.js";
 import type {
   LiveNodeState,
@@ -77,6 +78,7 @@ export { summarizeChangeSet, renderChangeSet } from "@intentius/chant/reconcile"
  * vocabulary for a node's `owned: [...]` declaration (`NodeConfig.owned`).
  */
 export const RESOURCE_TYPE_ORDER = [
+  "node",
   "group-settings",
   "project-settings",
   "push-rules",
@@ -156,6 +158,7 @@ export function diff(
 ): DiffResult {
   const entries: ChangeSetEntry[] = [];
 
+  diffNodeRename(desired.nodeRename, entries);
   diffObject("group-settings", desired.groupSettings, live.groupSettings, GROUP_FIELDS, entries);
   diffObject("project-settings", desired.projectSettings, live.projectSettings, PROJECT_FIELDS, entries);
   diffObject("push-rules", desired.pushRules, live.pushRules, PUSH_RULE_FIELDS, entries);
@@ -190,6 +193,32 @@ export function diff(
   });
 
   return { org: node, entries, liveManagedTotal: countLiveManaged(desired, live) };
+}
+
+// ---------------------------------------------------------------------------
+// Node rename (runner-resolved `previously:` — see runner.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * A runner-injected `nodeRename` slice is an already-verified rename intent:
+ * the runner probed live state while resolving the node's `previously:` alias
+ * (the live resource exists at `fromPath`, none at `toPath`) and enumerated
+ * the scope under the old path. The diff's job is just to shape it as ONE
+ * update — never a delete + create, so no `owned` requirement and nothing for
+ * the removal guardrails to count. The synthetic `key` field matches chant's
+ * `resolveRenames` collapse shape.
+ */
+function diffNodeRename(desired: NodeRenameIntent | undefined, out: ChangeSetEntry[]): void {
+  if (desired === undefined) return;
+  const fields: FieldChange[] = [{ field: "key", before: desired.fromPath, after: desired.toPath }];
+  out.push({
+    kind: "update",
+    resourceType: "node",
+    key: desired.toPath,
+    before: { path: desired.fromPath },
+    after: desired,
+    fields,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -545,10 +574,43 @@ function diffWebhooksAs(
   out: ChangeSetEntry[],
 ): void {
   if (desired === undefined) return;
+
+  // An explicit `previously:` declaration is an explicit rename intent: when a
+  // live hook by the previous URL exists and none by the new URL does, plan
+  // ONE update (the rename) directly against the old live hook — no
+  // delete + create pair, so no `owned` requirement, and the live hook id
+  // rides along on `before` for the apply path. System hooks are excluded:
+  // their API has no update endpoint, so delete + re-create is honest there.
+  // The synthetic `key` field matches chant's `resolveRenames` collapse shape.
+  const liveByUrl = new Map(live.map((w) => [w.url, w]));
+  const renamedFrom = new Map<string, string>(); // previous URL → new URL
+  if (resourceType === "webhook") {
+    for (const dw of desired) {
+      if (typeof dw.previously === "string" && liveByUrl.has(dw.previously) && !liveByUrl.has(dw.url)) {
+        renamedFrom.set(dw.previously, dw.url);
+      }
+    }
+  }
+  for (const dw of desired) {
+    const prev =
+      typeof dw.previously === "string" && renamedFrom.get(dw.previously) === dw.url
+        ? dw.previously
+        : undefined;
+    if (prev === undefined) continue;
+    const lw = liveByUrl.get(prev)!;
+    const fields = diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS);
+    fields.push({ field: "key", before: prev, after: dw.url });
+    out.push({ kind: "update", resourceType, key: dw.url, before: lw, after: dw, fields });
+  }
+
   diffCollection<WebhookConfig, LiveWebhook>({
     resourceType,
-    desired: new Map(desired.map((w) => [w.url, w])),
-    live: new Map(live.map((w) => [w.url, w])),
+    desired: new Map(
+      desired
+        .filter((w) => !(typeof w.previously === "string" && renamedFrom.get(w.previously) === w.url))
+        .map((w) => [w.url, w]),
+    ),
+    live: new Map(live.filter((w) => !renamedFrom.has(w.url)).map((w) => [w.url, w])),
     compareFields: (dw, lw) =>
       diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS),
     opts,

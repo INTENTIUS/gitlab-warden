@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { webhooksCycle, buildHookBody } from "./webhooks.js";
 import { makeClient, makeBudget } from "./_testutil.js";
 import { runReconcile } from "../reconcile/runner.js";
-import type { GovernanceConfig } from "../config/types.js";
+import { diff } from "../reconcile/diff.js";
+import type { GovernanceConfig, NodeConfig } from "../config/types.js";
+import type { LiveNodeState } from "../reconcile/live.js";
 
 const scope = {};
 
@@ -55,6 +57,81 @@ describe("webhooksCycle.apply", () => {
     await expect(
       webhooksCycle.apply(client, { kind: "delete", resourceType: "webhook", key: "https://h", before: { url: "https://h" } }, "group:acme", scope, makeBudget()),
     ).rejects.toThrow(/no live id/);
+  });
+});
+
+describe("webhook previously: rename", () => {
+  it("plans exactly one update keyed by the new URL, live id on before — no delete + create", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [{ url: "https://new", previously: "https://old", pushEvents: true }],
+    };
+    const live: LiveNodeState = { webhooks: [{ id: 9, url: "https://old", pushEvents: false }] };
+    const cs = diff("group:acme", desired, live, { isOwned: () => true });
+    expect(cs.entries).toHaveLength(1);
+    const e = cs.entries[0]!;
+    expect(e.kind).toBe("update");
+    expect(e.key).toBe("https://new");
+    expect((e.before as { id?: number }).id).toBe(9);
+    expect(e.fields).toContainEqual({ field: "key", before: "https://old", after: "https://new" });
+    expect(e.fields).toContainEqual({ field: "pushEvents", before: false, after: true });
+  });
+
+  it("a stale alias (no live hook at the old URL) falls back to a create", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [{ url: "https://new", previously: "https://old" }],
+    };
+    const cs = diff("group:acme", desired, { webhooks: [] }, {});
+    expect(cs.entries).toHaveLength(1);
+    expect(cs.entries[0]!.kind).toBe("create");
+    expect(cs.entries[0]!.key).toBe("https://new");
+  });
+
+  it("an alias whose new URL is already live is inert (normal diff, old URL undeclared)", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [{ url: "https://new", previously: "https://old", pushEvents: true }],
+    };
+    const live: LiveNodeState = {
+      webhooks: [
+        { id: 1, url: "https://new", pushEvents: true },
+        { id: 9, url: "https://old" },
+      ],
+    };
+    const cs = diff("group:acme", desired, live, {});
+    expect(cs.entries).toEqual([]); // converged; the old hook is undeclared and unowned
+  });
+
+  it("applies the rename as one PUT by live id, carrying the new URL", async () => {
+    const client = makeClient();
+    await webhooksCycle.apply(
+      client,
+      {
+        kind: "update",
+        resourceType: "webhook",
+        key: "https://new",
+        before: { id: 9, url: "https://old" },
+        after: { url: "https://new", previously: "https://old" },
+        fields: [{ field: "key", before: "https://old", after: "https://new" }],
+      },
+      "group:acme",
+      {},
+      makeBudget(),
+    );
+    expect(client.calls).toEqual([
+      { method: "PUT", path: "/groups/acme/hooks/9", body: { url: "https://new" } },
+    ]);
+  });
+
+  it("system hooks ignore previously: — delete + create stays honest (no update endpoint)", () => {
+    const desired: NodeConfig = {
+      kind: "instance",
+      systemHooks: [{ url: "https://new", previously: "https://old" }],
+    };
+    const live: LiveNodeState = { systemHooks: [{ id: 9, url: "https://old" }] };
+    const cs = diff("instance:lab", desired, live, { isOwned: () => true });
+    expect(cs.entries.map((e) => e.kind).sort()).toEqual(["create", "delete"]);
   });
 });
 

@@ -464,6 +464,105 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
       const live = await client.paginate<{ url: string }>(`/projects/${projectId}/hooks`);
       expect(live).toEqual([]);
     });
+
+    it("previously: renames a hook URL in place, keeping the hook id", async () => {
+      const OLD_URL = "https://smoke.example.com/hook-old";
+      const NEW_URL = "https://smoke.example.com/hook-new";
+      const made = await client.request<{ id: number }>("POST", `/projects/${projectId}/hooks`, { url: OLD_URL, push_events: true });
+      const renamed: GovernanceConfig["nodes"] = {
+        [PROJECT_PATH]: { kind: "project", webhooks: [{ url: NEW_URL, previously: OLD_URL, pushEvents: true }] },
+      };
+      const cr = applied(await reconcile("webhooks", renamed, "apply"));
+      expect(cr.counts).toEqual({ create: 0, update: 1, delete: 0 });
+      const live = await client.paginate<{ id: number; url: string }>(`/projects/${projectId}/hooks`);
+      expect(live.map((h) => h.url)).toEqual([NEW_URL]);
+      expect(live[0]!.id).toBe(made.id);
+      converged(await reconcile("webhooks", renamed, "dry-run"));
+      await client.request("DELETE", `/projects/${projectId}/hooks/${made.id}`);
+    });
+  });
+
+  applySuite("smoke: node rename (previously:)", () => {
+    let renProjectId: number | undefined;
+    let renGroupId: number | undefined;
+
+    afterAll(async () => {
+      if (renProjectId !== undefined) await client.request("DELETE", `/projects/${renProjectId}`).catch(() => {});
+      if (renGroupId !== undefined) await client.request("DELETE", `/groups/${renGroupId}`).catch(() => {});
+    }, 60_000);
+
+    it("renames a project in place: one update, same project id, converged after", async () => {
+      const made = await client.request<{ id: number }>("POST", "/projects", {
+        name: "ren-old",
+        path: "ren-old",
+        namespace_id: groupId,
+        visibility: "private",
+      });
+      renProjectId = made.id;
+
+      const nodes: GovernanceConfig["nodes"] = {
+        [`${GROUP_PATH}/ren-new`]: { kind: "project", previously: `${GROUP_PATH}/ren-old` },
+      };
+      // The node-rename cycle is runner-managed (appended when a rename is
+      // pending), so no registry cycle is selected here.
+      const result = await runReconcile({ config: { nodes }, client, cycles: [], mode: "apply" });
+      expect(result.errored).toEqual([]);
+      expect(result.cycles).toHaveLength(1);
+      const cr = result.cycles[0]!;
+      expect(cr.name).toBe("node-rename");
+      expect(cr.counts).toEqual({ create: 0, update: 1, delete: 0 }); // one update, never delete + create
+      expect(cr.failed).toEqual([]);
+
+      const live = await client.request<{ id: number }>("GET", `/projects/${encodeId(`${GROUP_PATH}/ren-new`)}`);
+      expect(live.id).toBe(made.id); // same project, new path
+
+      // Converged: the alias is inert and the scope runs under the new path.
+      const again = await runReconcile({
+        config: { nodes: { [`${GROUP_PATH}/ren-new`]: { kind: "project", previously: `${GROUP_PATH}/ren-old` } } },
+        client,
+        cycles: [CYCLE_REGISTRY["project-settings"]!],
+        mode: "dry-run",
+      });
+      expect(again.errored).toEqual([]);
+      expect(again.cycles).toHaveLength(1); // no node-rename appended
+      expect(again.cycles[0]!.org).toBe(`project:${GROUP_PATH}/ren-new`);
+      expect(again.cycles[0]!.counts).toEqual({ create: 0, update: 0, delete: 0 });
+    }, 120_000);
+
+    it("renames a group in place: one update, same group id, converged after", async () => {
+      const made = await client.request<{ id: number }>("POST", "/groups", {
+        name: "ren-grp-old",
+        path: "ren-grp-old",
+        parent_id: groupId,
+        visibility: "private",
+      });
+      renGroupId = made.id;
+
+      const nodes: GovernanceConfig["nodes"] = {
+        [`${GROUP_PATH}/ren-grp-new`]: { kind: "group", previously: `${GROUP_PATH}/ren-grp-old` },
+      };
+      const result = await runReconcile({ config: { nodes }, client, cycles: [], mode: "apply" });
+      expect(result.errored).toEqual([]);
+      expect(result.cycles).toHaveLength(1);
+      const cr = result.cycles[0]!;
+      expect(cr.name).toBe("node-rename");
+      expect(cr.counts).toEqual({ create: 0, update: 1, delete: 0 });
+      expect(cr.failed).toEqual([]);
+
+      const live = await client.request<{ id: number }>("GET", `/groups/${encodeId(`${GROUP_PATH}/ren-grp-new`)}`);
+      expect(live.id).toBe(made.id);
+
+      const again = await runReconcile({
+        config: { nodes: { [`${GROUP_PATH}/ren-grp-new`]: { kind: "group", previously: `${GROUP_PATH}/ren-grp-old` } } },
+        client,
+        cycles: [CYCLE_REGISTRY["group-settings"]!],
+        mode: "dry-run",
+      });
+      expect(again.errored).toEqual([]);
+      expect(again.cycles).toHaveLength(1);
+      expect(again.cycles[0]!.org).toBe(`group:${GROUP_PATH}/ren-grp-new`);
+      expect(again.cycles[0]!.counts).toEqual({ create: 0, update: 0, delete: 0 });
+    }, 120_000);
   });
 
   applySuite("smoke: deploy-keys-tokens", () => {

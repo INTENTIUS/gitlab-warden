@@ -107,7 +107,9 @@ export const webhooksCycle: Cycle<WebhooksScope> = {
     if (typeof id !== "number") throw new Error(`webhook '${entry.key}' has no live id`);
     if (entry.kind === "update") {
       charge(budget);
-      await client.request("PUT", `${base}/${id}`, buildHookBody(entry.after as WebhookConfig, false));
+      // URL included: for a `previously:` rename the PUT re-addresses the hook
+      // (the live id stays); for ordinary drift it is the unchanged key.
+      await client.request("PUT", `${base}/${id}`, buildHookBody(entry.after as WebhookConfig, true));
       return;
     }
     charge(budget);

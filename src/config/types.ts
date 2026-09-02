@@ -210,6 +210,14 @@ export interface IntegrationConfig {
 /** A group or project webhook. Keyed by `url`. */
 export interface WebhookConfig {
   url: string;
+  /**
+   * Former hook URL — an explicit rename intent, no `owned` needed: when a
+   * live hook by the old URL exists (and none by the new URL), the plan is a
+   * single update that keeps the hook id. Ignored on `systemHooks` (the
+   * system-hooks API has no update endpoint, so delete + re-create is honest
+   * there).
+   */
+  previously?: string;
   pushEvents?: boolean;
   mergeRequestsEvents?: boolean;
   tagPushEvents?: boolean;
@@ -287,11 +295,37 @@ export interface MemberRoleConfig {
 // ---------------------------------------------------------------------------
 
 /**
+ * A pending node rename, resolved by the runner from a node's `previously:`
+ * declaration (see `NodeConfig.previously`). Runner-injected into the scope's
+ * config — never written by operators.
+ */
+export interface NodeRenameIntent {
+  /** Current live full path (the node's `previously`). */
+  fromPath: string;
+  /** Declared full path (the node's key in `nodes{}`). */
+  toPath: string;
+  /** Display name to set alongside the path, when no settings slice manages it. */
+  name?: string;
+}
+
+/**
  * Desired state for a single node (group or project). Slices are present only
  * when managed. Later cycles extend this with their own slices.
  */
 export interface NodeConfig {
   kind: NodeKind;
+  /**
+   * Former full path of this node — an explicit rename intent, no `owned`
+   * needed: when the live group/project exists at the old path (and none
+   * exists at the declared path), the runner adopts the live resource under
+   * its old path and the plan is a single update (`PUT /groups/:id` /
+   * `PUT /projects/:id` with the new path) that keeps the id, history, and
+   * memberships. Must share the declared path's parent namespace (transfers
+   * are a different API and unsupported). Not valid on instance nodes.
+   */
+  previously?: string;
+  /** Runner-injected pending rename (from `previously`). Not operator config. */
+  nodeRename?: NodeRenameIntent;
   /**
    * Ownership declaration for this node's reconciled collections — the gate on
    * planned deletes. Absent or `false` (the default): no deletes are planned in

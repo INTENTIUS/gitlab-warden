@@ -29,7 +29,8 @@ instead.
 | protected-branches | yes | yes | yes | yes (re-protect) | yes | — |
 | protected-tags | yes | yes | yes | yes (re-protect) | yes | — |
 | ci-variables | yes | yes | yes | yes | yes | — |
-| webhooks | yes | yes | yes | yes | yes | — |
+| webhooks | yes | yes (+ `previously:` URL rename keeps the hook id) | yes | yes | yes | — |
+| node-rename (`previously:` on a node) | n/a (runner probe) | yes (project + group; same id after) | yes | n/a | n/a (never deletes) | — |
 | deploy-keys-tokens | yes | yes (key + token) | yes | yes (can_push) | yes (both) | — |
 | access-tokens | yes | yes | yes | n/a (immutable) | yes (revoke) | — |
 | integrations | yes | yes | yes | n/a (properties write-only) | yes (`active: false` → DELETE) | — |

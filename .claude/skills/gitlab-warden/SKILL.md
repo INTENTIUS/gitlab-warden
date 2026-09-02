@@ -13,8 +13,8 @@ a pointer — read the docs, do not restate them:
 - [SETUP.md](../../../SETUP.md) — PAT creation and scopes, self-managed
   `--base-url`, first dry-run, the disposable e2e sandbox.
 - [CLI.md](../../../CLI.md) — flags, config loading, exit codes.
-- [CYCLES.md](../../../CYCLES.md) — what each of the 19 cycles reads and
-  reconciles.
+- [CYCLES.md](../../../CYCLES.md) — what each of the 19 registry cycles (plus
+  the runner-managed node-rename cycle) reads and reconciles.
 - [DESIGN.md](../../../DESIGN.md) — the scope and inheritance model (why
   inherited members are never drift).
 

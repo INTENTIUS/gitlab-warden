@@ -16,7 +16,7 @@ cycles, the guardrails) serves the policy. It is the one file you must author.
   mutation, diffed, or changed. This holds at two levels: which nodes you
   declare, and which fields/collections within a node you declare.
 
-Two behaviors worth knowing before you write one:
+Three behaviors worth knowing before you write one:
 
 - **Deletes are opt-in, per node.** Deletes are ownership-gated: the diff
   proposes deleting a live entry missing from the policy only when that
@@ -33,6 +33,25 @@ Two behaviors worth knowing before you write one:
   nothing live to measure against it falls back to chant's plan-relative
   `removalDeltaCap` (deletes over the plan's updates plus deletes). A
   converged node's single stale delete passes, a typo'd mass-delete blocks.
+  A node rename declared with `previously:` is a single update and never
+  counts as a delete.
+- **Renames are explicit, not inferred.** Changing a declared node's key
+  would otherwise read as "old node gone, new node missing", and for a node
+  that means losing the project's history or the group's memberships to a
+  delete + create. Declaring the former path as `previously:` on the node
+  turns that into an explicit rename: when the live group/project still sits
+  at the old path (and nothing sits at the new one), warden adopts it there
+  and plans one in-place update (`PUT /groups/:id` / `PUT /projects/:id` with
+  the new path) that keeps the id, history, and memberships. Since nothing is
+  deleted, no `owned` is needed. While the rename is pending, the node's
+  scope runs under its old path (the live identity) and the rename applies
+  after the other cycles; the next run finds the node at its declared path
+  and the alias goes inert, so it is safe to leave in place. The alias must
+  share the declared path's parent namespace (a namespace move is a transfer,
+  which is a different API and out of scope). Webhooks support the same
+  `previously:` (former URL, keeping the hook id). Protected branches
+  deliberately do not: they are keyed by name with no in-place rename API, so
+  a renamed protection is honestly a delete + create.
 - **Tier-graceful.** Premium/Ultimate endpoints that return 403 on read are
   tolerated and skipped, never fatal: the cycle's plan gains a
   `NOTE: <slice>: read was tier-gated (403); planned entries may fail on apply`
@@ -180,6 +199,10 @@ nodes:
   acme/platform/api:
     kind: project
 
+    previously: acme/platform/api-svc   # former full path: turns a rename into an
+                                        # update instead of a delete + create (also
+                                        # valid on group nodes; same parent only)
+
     projectSettings:                    # cycle: project-settings
       description: "Platform API"
       visibility: private
@@ -301,6 +324,7 @@ group/project (a label for instance nodes), and each value is one node:
 |---|---|---|---|---|---|
 | `kind` | `group` \| `project` \| `instance` | **required** | all | Free | selects which endpoints every cycle uses for this node |
 | `owned` | boolean \| string[] | optional; default: no deletes | all | Free | delete gate for this node's collections: `true` = warden owns everything it reconciles here (live entries absent from config become deletes); a list owns only those resource types (the `[type]` labels in plans — `member`, `webhook`, `variable`, …; the full vocabulary is `RESOURCE_TYPE_ORDER` in `src/reconcile/diff.ts`); absent/`false` = creates and updates only |
+| `previously` | string | optional | node-rename (runner-managed) | Free | former full path — an explicit rename intent, no `owned` needed: when the live group/project exists at the old path (and none at the declared path), the plan is a single update that keeps the id, history, and memberships. Must share the declared path's parent namespace; not valid on instance nodes |
 
 Group settings live in **`groupSettings`**, a partial update of
 `PUT /groups/:id`.
@@ -487,6 +511,7 @@ feature while project webhooks are Free.
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `url` | string | **required** (key) | webhooks | Free | hook endpoint |
+| `previously` | string | optional | webhooks | Free | former hook URL — an explicit rename intent, no `owned` needed: when a live hook by the old URL exists (and none by the new URL), the plan is a single update that keeps the hook id. Ignored on `systemHooks` (no update endpoint there) |
 | `pushEvents` | boolean | optional | webhooks | Free | trigger on pushes |
 | `mergeRequestsEvents` | boolean | optional | webhooks | Free | trigger on MR events |
 | `tagPushEvents` | boolean | optional | webhooks | Free | trigger on tag pushes |

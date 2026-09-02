@@ -35,8 +35,27 @@ Shared behavior, so it isn't repeated 19 times:
 - **Keying.** Config entries are matched to live entries by a human-stable
   key (name, url, username) rather than GitLab's numeric ids; the live ids
   are carried along for the apply path but never diffed.
+- **Renames.** A `previously:` declaration (on a node, or on a webhook) is
+  an explicit rename intent: when the live resource exists under the old key
+  and none under the new one, the plan is a single in-place update that keeps
+  the id, never a delete + create, so no `owned` is needed. Keys with no
+  in-place update API (protected branch names, system hooks) stay honest
+  delete + create.
 
-The 19 cycles, in registry order (`src/cli/registry.ts`):
+Node renames run through **node-rename**, a runner-managed twentieth cycle
+that is not in the registry and not selectable via `--cycles`: the runner
+resolves each node's `previously:` alias against live state before scope
+enumeration (scope ids are kind-prefixed full paths built from node keys, so
+the alias must resolve before the node map becomes scopes), enumerates a
+pending rename's scope under the old path (the live identity), and appends
+the cycle after the selected ones. Every other cycle therefore reads and
+writes the resource where it actually lives, and the rename
+(`PUT /groups/:id` / `PUT /projects/:id` with the new path, plus the new
+display name unless `groupSettings.name` manages it) lands last; the next
+run finds the node at its declared path and the alias goes inert. A declared
+rename resolves on every run, whatever `--cycles` selects.
+
+The 19 registry cycles, in registry order (`src/cli/registry.ts`):
 
 ## member-roles
 
@@ -264,6 +283,8 @@ addresses hooks by numeric id, which warden treats as apply-path plumbing).
   `DELETE …/hooks/:id` on delete.
 - The `token` field is write-only: sent on create/update, never read back,
   never diffed.
+- A hook's `previously:` (former URL) plans a rename as one `PUT` against the
+  live hook id, carrying the new URL; see the shared **Renames** note above.
 
 ## baseline
 

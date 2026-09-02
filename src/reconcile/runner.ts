@@ -11,6 +11,10 @@
  * receive the scope id) know whether to hit group or project endpoints. Use
  * `parseScope()` to split one and `encodeId()` (from the client) on the path.
  *
+ * `previously:` node aliases resolve here, before scope enumeration (see
+ * `resolveNodeRenames`): a pending rename's scope runs under the OLD path for
+ * the whole run and the appended `node-rename` cycle applies the rename last.
+ *
  * Guardrails: the removal cap (don't let a typo mass-delete), computed against
  * the LIVE roster via `removalLiveCap` below. A self-lockout guard (don't
  * strip the last Owner) can be layered in once the members cycle lands.
@@ -29,10 +33,12 @@ import type {
   GuardrailDiagnostic,
 } from "@intentius/chant/reconcile";
 import type { GitLabClient } from "../auth/client.js";
+import { encodeId } from "../auth/client.js";
 import type { GovernanceConfig, NodeConfig, NodeKind } from "../config/types.js";
 import type { LiveNodeState } from "./live.js";
 import { diff } from "./diff.js";
-import { drainGatedSliceNotes } from "../cycles/_shared.js";
+import { drainGatedSliceNotes, isNotFound } from "../cycles/_shared.js";
+import { nodeRenameCycle } from "../cycles/node-rename.js";
 
 export { BudgetExhaustedError } from "@intentius/chant/reconcile";
 export type {
@@ -76,6 +82,78 @@ export interface RunReconcileOptions<TScope = unknown> {
   requestBudget?: number;
   /** Max fraction of pre-existing entries deletable in one apply. Default 0.25. */
   removalDeltaCapFraction?: number;
+}
+
+/** A pending node rename, resolved from a node's `previously:` alias. */
+export interface PendingNodeRename {
+  kind: NodeKind;
+  /** Live full path (the alias). */
+  fromPath: string;
+  /** Declared full path (the node's key in `nodes{}`). */
+  toPath: string;
+}
+
+/** Parent namespace of a full path ("" for a top-level path). */
+function parentOf(path: string): string {
+  const i = path.lastIndexOf("/");
+  return i === -1 ? "" : path.slice(0, i);
+}
+
+/** Whether a group/project exists at `path` (404 → no; other errors rethrow). */
+async function nodeIsLive(client: GitLabClient, kind: NodeKind, path: string): Promise<boolean> {
+  try {
+    await client.request("GET", `/${kind === "group" ? "groups" : "projects"}/${encodeId(path)}`);
+    return true;
+  } catch (err) {
+    if (isNotFound(err)) return false;
+    throw err;
+  }
+}
+
+/**
+ * Resolve each node's `previously:` alias against live state, BEFORE scope
+ * enumeration — scope ids are kind-prefixed full paths built from node keys,
+ * so a rename must be known before the node map becomes scopes. An alias is a
+ * pending rename only when the live resource exists at the old path and none
+ * exists at the declared path; a declared path that is already live wins (the
+ * alias is inert), and an alias with nothing live at either path is a no-op
+ * falling back to normal create behavior. The 1-2 probe GETs per aliased node
+ * run before the request budget exists and are not charged against it.
+ *
+ * Config errors (an alias on an instance node, a cross-namespace alias — a
+ * transfer, not a rename — or an alias colliding with another declared node)
+ * throw rather than guess.
+ */
+export async function resolveNodeRenames(
+  client: GitLabClient,
+  nodes: Record<string, NodeConfig>,
+): Promise<PendingNodeRename[]> {
+  const pending: PendingNodeRename[] = [];
+  const seenAliases = new Set<string>();
+  for (const [path, node] of Object.entries(nodes)) {
+    const prev = node.previously;
+    if (typeof prev !== "string" || prev === path) continue;
+    if (node.kind === "instance") {
+      throw new Error(`node "${path}": previously: is not supported on instance nodes`);
+    }
+    if (parentOf(prev) !== parentOf(path)) {
+      throw new Error(
+        `node "${path}": previously: "${prev}" is in a different parent namespace — ` +
+          `previously: declares a rename, not a transfer`,
+      );
+    }
+    if (nodes[prev] !== undefined) {
+      throw new Error(`node "${path}": previously: "${prev}" is itself a declared node`);
+    }
+    if (seenAliases.has(prev)) {
+      throw new Error(`previously: "${prev}" is declared by more than one node`);
+    }
+    seenAliases.add(prev);
+    if (await nodeIsLive(client, node.kind, path)) continue; // declared path live → alias inert
+    if (!(await nodeIsLive(client, node.kind, prev))) continue; // nothing to adopt → normal create path
+    pending.push({ kind: node.kind, fromPath: prev, toPath: path });
+  }
+  return pending;
 }
 
 /**
@@ -142,11 +220,34 @@ export async function runReconcile<TScope = unknown>(
 ): Promise<ReconcileResult> {
   const maxFraction = opts.removalDeltaCapFraction ?? 0.25;
 
+  // Resolve `previously:` aliases first — scopes are built from node keys, so
+  // a pending rename must be known before the node map becomes scopes.
+  const pendingRenames = await resolveNodeRenames(opts.client, opts.config.nodes);
+  const renameByPath = new Map(pendingRenames.map((p) => [p.toPath, p]));
+
   // Map declared nodes (keyed by full path) → kind-prefixed reconcile scopes.
+  // A node with a pending rename is adopted under its OLD path — the live
+  // identity — so every cycle reads and writes the resource where it actually
+  // lives, with the verified intent injected as the `nodeRename` slice. The
+  // rename itself is applied by `nodeRenameCycle`, appended LAST below:
+  // chant's loop is cycle-major, so all other cycles finish against the old
+  // path before the rename PUT moves it; the next run finds the node at its
+  // declared path and the alias goes inert. (`nodeRename` is runner-owned:
+  // any operator-written value is dropped here.)
   const scopes: Record<string, NodeConfig> = {};
   for (const [path, node] of Object.entries(opts.config.nodes)) {
-    scopes[nodeScopeId(node.kind, path)] = node;
+    const p = renameByPath.get(path);
+    if (p) {
+      scopes[nodeScopeId(node.kind, p.fromPath)] = { ...node, nodeRename: { fromPath: p.fromPath, toPath: path } };
+    } else {
+      scopes[nodeScopeId(node.kind, path)] = { ...node, nodeRename: undefined };
+    }
   }
+
+  const cycles =
+    pendingRenames.length > 0 && !opts.cycles.some((c) => c.name === nodeRenameCycle.name)
+      ? [...opts.cycles, nodeRenameCycle as unknown as Cycle<TScope>]
+      : opts.cycles;
 
   // Denominator for `removalLiveCap`, captured from the immediately preceding
   // `diff()` call. Sound because chant's loop is strictly sequential per
@@ -160,7 +261,7 @@ export async function runReconcile<TScope = unknown>(
   const result = await coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
     client: opts.client,
     scopes,
-    cycles: opts.cycles,
+    cycles,
     scope: opts.scope,
     mode: opts.mode,
     diff: (scopeId, desired, live, dopts) => {
