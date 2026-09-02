@@ -41,6 +41,8 @@ export interface ReconcileArgs {
   baseUrlEnv: string | undefined;
   tokenEnv: string;
   allowGuardrailOverride: boolean;
+  /** Max deletable fraction per resource type, in (0,1]. Default 0.25 downstream. */
+  removalCapFraction: number | undefined;
 }
 
 const KNOWN_FLAGS = new Set([
@@ -51,6 +53,7 @@ const KNOWN_FLAGS = new Set([
   "--base-url-env",
   "--token-env",
   "--allow-guardrail-override",
+  "--removal-cap-fraction",
 ]);
 
 /** Parse reconcile argv. Pure: throws `CliError` (with exit code) on bad input. */
@@ -63,6 +66,7 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
     baseUrlEnv: undefined,
     tokenEnv: "GITLAB_TOKEN",
     allowGuardrailOverride: false,
+    removalCapFraction: undefined,
   };
 
   const need = (i: number, flag: string): string => {
@@ -101,6 +105,17 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
       case "--allow-guardrail-override":
         args.allowGuardrailOverride = true;
         break;
+      case "--removal-cap-fraction": {
+        const v = need(++i, flag);
+        const f = Number(v);
+        // Same (0,1] contract chant's removalDeltaCap enforces — validated
+        // here so a typo is a clean exit 2, not a mid-run throw.
+        if (!Number.isFinite(f) || f <= 0 || f > 1) {
+          throw new CliError(2, `--removal-cap-fraction must be a number in (0, 1], got: ${v}`);
+        }
+        args.removalCapFraction = f;
+        break;
+      }
     }
     i++;
   }
@@ -175,7 +190,14 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
 
   let result;
   try {
-    result = await runReconcile({ config, client, cycles, mode: args.mode, allowGuardrailOverride: args.allowGuardrailOverride });
+    result = await runReconcile({
+      config,
+      client,
+      cycles,
+      mode: args.mode,
+      allowGuardrailOverride: args.allowGuardrailOverride,
+      removalDeltaCapFraction: args.removalCapFraction,
+    });
   } catch (err) {
     die(3, `reconcile failed: ${errMsg(err)}`);
   }
@@ -230,6 +252,7 @@ function printUsage(): void {
       "  --base-url <url>              GitLab instance URL (default https://gitlab.com; or --base-url-env <VAR>).",
       "  --token-env <VAR>             Env var holding the API token (default GITLAB_TOKEN).",
       "  --allow-guardrail-override    Apply even when guardrails trip.",
+      "  --removal-cap-fraction <f>    Max deletable fraction of each resource type's live entries, in (0, 1] (default 0.25).",
       "",
       "Migrate flags:",
       "  <path>                        One workflow file, or a directory (.github/workflows/).",

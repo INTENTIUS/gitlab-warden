@@ -36,6 +36,24 @@ describe("parseReconcileArgs", () => {
     expect(() => parseReconcileArgs(["--config"])).toThrow(/--config requires a value/);
   });
 
+  it("parses --removal-cap-fraction and validates the (0, 1] range at exit 2", () => {
+    expect(parseReconcileArgs(["--config", "g", "--removal-cap-fraction", "0.5"]).removalCapFraction).toBe(0.5);
+    expect(parseReconcileArgs(["--config", "g", "--removal-cap-fraction", "1"]).removalCapFraction).toBe(1);
+    expect(parseReconcileArgs(["--config", "g"]).removalCapFraction).toBeUndefined();
+    for (const bad of ["0", "-0.5", "1.5", "abc", "NaN"]) {
+      let err: unknown;
+      try {
+        parseReconcileArgs(["--config", "g", "--removal-cap-fraction", bad]);
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).code).toBe(2);
+      expect((err as CliError).message).toMatch(/--removal-cap-fraction must be a number in \(0, 1\]/);
+    }
+    expect(() => parseReconcileArgs(["--config", "g", "--removal-cap-fraction"])).toThrow(/requires a value/);
+  });
+
   it("base URL stays optional (defaults to gitlab.com downstream)", () => {
     const a = parseReconcileArgs(["--config", "g.yaml"]);
     expect(a.baseUrl).toBeUndefined();

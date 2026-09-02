@@ -25,6 +25,7 @@ build time).
 | `--base-url-env <VAR>` | — | read the base URL from an env var instead (`--base-url` wins if both are given) |
 | `--token-env <VAR>` | `GITLAB_TOKEN` | env var holding the API token; the run fails (exit 2) if it is unset or empty |
 | `--allow-guardrail-override` | off | apply even when a guardrail trips |
+| `--removal-cap-fraction <f>` | `0.25` | max deletable fraction of each resource type's live entries per apply; must be in `(0, 1]` or the parse fails with exit 2 |
 
 The command accepts flags only; a positional argument is an error. Every flag
 except `--allow-guardrail-override` takes a value.
@@ -62,17 +63,12 @@ Never pass the token on the command line; export it and name the variable via
 - **apply**: applies each planned entry, then prints
   `Applied: N, Failed: M` per cycle with one `FAILED [type] key: error` line
   per failure (e.g. a 403 from a tier-gated endpoint).
-- **Guardrail**: `removalLiveCap` refuses an apply whose deletes exceed 25%
-  of the live managed entries in the collections the policy declares; with
-  nothing live to measure against it falls back to chant's plan-relative
-  `removalDeltaCap` (deletes over the plan's updates plus deletes). One
-  stale delete on an otherwise-converged node passes (1 of N live), while a
-  typo'd mass-delete blocks. A tripped guardrail prints
-  `GUARDRAIL BLOCK: …`, skips that cycle's apply, and exits 1.
-  `--allow-guardrail-override` applies anyway. (Deletes appear in a plan only
-  for nodes whose policy declares `owned` — see [POLICY.md](POLICY.md); a node
-  without it plans creates and updates only, and the cap protects the nodes
-  that do opt in.)
+- **Guardrail**: the per-collection removal cap bounds how much of any one
+  resource type's live entries a single apply may delete — the exact
+  promise lives with the delete semantics in [POLICY.md](POLICY.md). A
+  tripped guardrail prints `GUARDRAIL BLOCK: …`, skips that cycle's apply,
+  and exits 1; `--allow-guardrail-override` applies anyway, and
+  `--removal-cap-fraction` adjusts the threshold.
 - **Request budget**: a run has a shared budget of 1000 API requests. On
   exhaustion the run stops cleanly and prints `DEFERRED (budget): <cycles>`
   to stderr; run again (or narrow `--cycles`) to finish.

@@ -27,14 +27,20 @@ Three behaviors worth knowing before you write one:
   reconciles there; a list such as `owned: [member, webhook]` limits
   ownership to the listed resource types (the `[type]` labels shown in
   plans). A programmatic `diffOptions.isOwned` predicate, when supplied,
-  overrides the declaration. Owned deletes still run the guardrails before
-  any apply: `removalLiveCap` refuses an apply whose deletes exceed 25% of
-  the live managed entries in the collections the policy declares; with
-  nothing live to measure against it falls back to chant's plan-relative
-  `removalDeltaCap` (deletes over the plan's updates plus deletes). A
-  converged node's single stale delete passes, a typo'd mass-delete blocks.
-  A node rename declared with `previously:` is a single update and never
-  counts as a delete.
+  overrides the declaration. Owned deletes still run a guardrail before
+  any apply — the per-collection removal cap (chant's `removalDeltaCap`):
+  within one apply, each resource type's deletes may not exceed 25% (or
+  `--removal-cap-fraction`) of that type's live entries in the collections
+  this node's policy declares. The denominator is per type, so live
+  entries of one kind (members, say) never dilute the delete fraction of
+  another (webhooks); a type the diff has no live count for is measured
+  against that type's own non-create plan entries instead. A converged
+  node's single stale delete passes (1 of N live), while a typo that would
+  drop most of one collection blocks, and the block message names the
+  worst-offending type. The cap bounds a single apply, not history —
+  repeated applies can remove more over time, and it measures only the
+  collections the policy declares. A node rename declared with
+  `previously:` is a single update and never counts as a delete.
 - **Renames are explicit, not inferred.** Changing a declared node's key
   would otherwise read as "old node gone, new node missing", and for a node
   that means losing the project's history or the group's memberships to a

@@ -294,23 +294,28 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
       expect(roster.find((m) => m.username === SMOKE_USER)?.access_level).toBe(30);
     });
 
-    it("removalDeltaCap blocks removing 1 of 2 live members at the default 25%", async () => {
+    it("removalDeltaCap blocks removing 1 of 2 live members at the default 25%, naming the type", async () => {
       const ownedNode: GovernanceConfig["nodes"] = {
         [GROUP_PATH]: { ...membersOf([["root", 50]]), owned: ["member"] },
       };
       const cr = one(await reconcile("members", ownedNode, "apply"));
       expect(cr.counts.delete).toBe(1);
       expect(cr.guardrailBlocked).toBe(true);
+      expect(cr.guardrails.ok).toBe(false);
       if (!cr.guardrails.ok) {
         expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalDeltaCap");
+        expect(cr.guardrails.diagnostics[0]!.message).toContain("1 of 2 live member entries");
       }
     });
 
-    it("deletes the undeclared member under `owned` once the cap is raised", async () => {
+    it("deletes the undeclared member at a cap the per-type live denominator satisfies", async () => {
       const ownedNode: GovernanceConfig["nodes"] = {
         [GROUP_PATH]: { ...membersOf([["root", 50]]), owned: ["member"] },
       };
-      const cr = applied(await reconcile("members", ownedNode, "apply", { removalDeltaCapFraction: 1 }));
+      // 1 delete of 2 live members is exactly 50%. Plan-relative the plan is
+      // the single delete (root is converged) — 1/1 = 100% would block — so
+      // this passes only because the denominator is the type's LIVE count.
+      const cr = applied(await reconcile("members", ownedNode, "apply", { removalDeltaCapFraction: 0.5 }));
       expect(cr.counts.delete).toBe(1);
       const roster = await client.paginate<{ username: string }>(`/groups/${groupId}/members`);
       expect(roster.map((m) => m.username)).toEqual(["root"]);
@@ -347,7 +352,7 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
       expect(live.map((b) => b.name)).toContain("smoke-*");
     });
 
-    it("deletes an undeclared protection under `owned`", async () => {
+    it("deletes an undeclared protection under `owned` (1 of 2 live passes at 0.5)", async () => {
       const ownedNode: GovernanceConfig["nodes"] = {
         [PROJECT_PATH]: {
           kind: "project",
@@ -355,7 +360,9 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
           protectedBranches: [{ name: "main", pushAccessLevel: 40, mergeAccessLevel: 40 }],
         },
       };
-      const cr = applied(await reconcile("protected-branches", ownedNode, "apply", { removalDeltaCapFraction: 1 }));
+      // Plan-relative this lone delete would read 1/1 = 100%; the per-type
+      // live denominator (2 protections live) makes 0.5 a sufficient cap.
+      const cr = applied(await reconcile("protected-branches", ownedNode, "apply", { removalDeltaCapFraction: 0.5 }));
       expect(cr.counts.delete).toBe(1);
       const live = await client.paginate<{ name: string }>(`/projects/${projectId}/protected_branches`);
       expect(live.map((b) => b.name)).toEqual(["main"]);

@@ -19,7 +19,8 @@ Shared behavior, so it isn't repeated 19 times:
   a list of resource types — see the [policy reference](POLICY.md)) marks
   resources owned; a programmatic `diffOptions.isOwned` predicate overrides
   the declaration when supplied. The delete paths listed below run only in
-  nodes that opted in.
+  nodes that opted in, and every apply is bounded by the per-collection
+  removal cap — see the delete semantics in [POLICY.md](POLICY.md).
 - **Tier-gated reads are tolerated.** A declared slice whose read comes
   back 403 is tolerated and skipped, never fatal: the read yields no live
   state, and the cycle's plan gains a NOTE line naming the slice
