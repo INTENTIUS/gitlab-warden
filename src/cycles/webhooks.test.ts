@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { resolveRenames } from "@intentius/chant/reconcile";
 import { webhooksCycle, buildHookBody } from "./webhooks.js";
 import { makeClient, makeBudget } from "./_testutil.js";
 import { runReconcile } from "../reconcile/runner.js";
@@ -132,6 +133,14 @@ describe("webhook previously: rename", () => {
     const live: LiveNodeState = { systemHooks: [{ id: 9, url: "https://old" }] };
     const cs = diff("instance:lab", desired, live, { isOwned: () => true });
     expect(cs.entries.map((e) => e.kind).sort()).toEqual(["create", "delete"]);
+    // `previously` is stripped from the desired entry, not just ignored: left
+    // on `after`, chant's resolveRenames would collapse the create + delete
+    // into an update and hide the real delete from the removal cap while the
+    // apply still executes delete + re-create.
+    const create = cs.entries.find((e) => e.kind === "create")!;
+    expect((create.after as { previously?: string }).previously).toBeUndefined();
+    const resolved = resolveRenames(cs);
+    expect(resolved.entries.map((e) => e.kind).sort()).toEqual(["create", "delete"]);
   });
 });
 

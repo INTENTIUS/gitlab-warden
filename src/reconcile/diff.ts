@@ -656,8 +656,15 @@ function diffWebhooksAs(
   // ONE update (the rename) directly against the old live hook — no
   // delete + create pair, so no `owned` requirement, and the live hook id
   // rides along on `before` for the apply path. System hooks are excluded:
-  // their API has no update endpoint, so delete + re-create is honest there.
+  // their API has no update endpoint, so delete + re-create is honest there —
+  // and `previously` is STRIPPED from their desired entries, not just
+  // ignored: a create whose `after.previously` matches a same-type delete
+  // would be collapsed by chant's `resolveRenames`, hiding the real delete
+  // from the removal cap while the apply still executes it.
   // The synthetic `key` field matches chant's `resolveRenames` collapse shape.
+  if (resourceType === "system-hook") {
+    desired = desired.map(({ previously: _previously, ...w }) => w);
+  }
   const liveByUrl = new Map(live.map((w) => [w.url, w]));
   const renamedFrom = new Map<string, string>(); // previous URL → new URL
   if (resourceType === "webhook") {
