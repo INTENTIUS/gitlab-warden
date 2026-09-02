@@ -11,9 +11,9 @@
  * receive the scope id) know whether to hit group or project endpoints. Use
  * `parseScope()` to split one and `encodeId()` (from the client) on the path.
  *
- * Guardrails: the removal cap (don't let a typo mass-delete). A self-lockout
- * guard (don't strip the last Owner) can be layered in once the members cycle
- * lands.
+ * Guardrails: the removal cap (don't let a typo mass-delete), computed against
+ * the LIVE roster via `removalLiveCap` below. A self-lockout guard (don't
+ * strip the last Owner) can be layered in once the members cycle lands.
  */
 
 import {
@@ -21,11 +21,18 @@ import {
   runGuardrailChecks,
   removalDeltaCap,
 } from "@intentius/chant/reconcile";
-import type { Cycle as CoreCycle, ReconcileResult, DiffOptions } from "@intentius/chant/reconcile";
+import type {
+  Cycle as CoreCycle,
+  ReconcileResult,
+  DiffOptions,
+  ChangeSet,
+  GuardrailDiagnostic,
+} from "@intentius/chant/reconcile";
 import type { GitLabClient } from "../auth/client.js";
 import type { GovernanceConfig, NodeConfig, NodeKind } from "../config/types.js";
 import type { LiveNodeState } from "./live.js";
 import { diff } from "./diff.js";
+import { drainGatedSliceNotes } from "../cycles/_shared.js";
 
 export { BudgetExhaustedError } from "@intentius/chant/reconcile";
 export type {
@@ -83,6 +90,45 @@ function ownedPredicate(owned: NodeConfig["owned"]): DiffOptions["isOwned"] {
   return (type: string) => owned === true || (Array.isArray(owned) && owned.includes(type));
 }
 
+/** Options for `removalLiveCap`. */
+export interface RemovalLiveCapOptions {
+  /** Max fraction of live managed entries deletable in one apply. Default 0.25. */
+  maxFraction?: number;
+}
+
+/**
+ * Warden's removal cap: refuse when planned deletes exceed `maxFraction` of
+ * the LIVE managed entries for this cycle × scope (`liveManagedTotal`, from
+ * `diff()`'s declared-slice count). Chant's `removalDeltaCap` divides by the
+ * plan's updates+deletes, so a single stale delete in an otherwise-converged
+ * cycle trips at 100%; against the live roster it is 1/N. With no live
+ * entries (`liveManagedTotal === 0`) this falls back to chant's plan-relative
+ * behavior so nothing gets less safe.
+ *
+ * Like chant's cap, expects a RENAME-RESOLVED change set (`runGuardrailChecks`
+ * handles that).
+ */
+export function removalLiveCap(
+  changeSet: ChangeSet,
+  liveManagedTotal: number,
+  opts: RemovalLiveCapOptions = {},
+): GuardrailDiagnostic | null {
+  const maxFraction = opts.maxFraction ?? 0.25;
+  if (liveManagedTotal <= 0) return removalDeltaCap(changeSet, { maxFraction });
+  const deletes = changeSet.entries.filter((e) => e.kind === "delete").length;
+  const fraction = deletes / liveManagedTotal;
+  if (fraction > maxFraction) {
+    return {
+      guardrail: "removalLiveCap",
+      message:
+        `${deletes} of ${liveManagedTotal} live managed entries (${Math.round(fraction * 100)}%) would be deleted, ` +
+        `exceeding the ${Math.round(maxFraction * 100)}% threshold. ` +
+        `Check for typos in config or raise maxFraction to proceed.`,
+    };
+  }
+  return null;
+}
+
 /**
  * Run the GitLab governance reconcile loop, delegating to the shared runner with
  * warden's `diff` (kind-prefixed node id as scope id) and guardrails wired in.
@@ -102,7 +148,16 @@ export async function runReconcile<TScope = unknown>(
     scopes[nodeScopeId(node.kind, path)] = node;
   }
 
-  return coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
+  // Denominator for `removalLiveCap`, captured from the immediately preceding
+  // `diff()` call. Sound because chant's loop is strictly sequential per
+  // scope × cycle — diff, then guardrails, on the same change set (locked by a
+  // test in runner.test.ts).
+  let lastLiveManagedTotal = 0;
+
+  // Clear notes a previous (crashed/errored) run may have left behind.
+  drainGatedSliceNotes();
+
+  const result = await coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
     client: opts.client,
     scopes,
     cycles: opts.cycles,
@@ -114,12 +169,28 @@ export async function runReconcile<TScope = unknown>(
       // declaration from there — `desired` is a cycle's buildDesired output
       // and may not carry it.
       const isOwned = dopts.isOwned ?? ownedPredicate(scopes[scopeId]?.owned);
-      return diff(scopeId, desired, live, { ...dopts, isOwned });
+      const changeSet = diff(scopeId, desired, live, { ...dopts, isOwned });
+      lastLiveManagedTotal = changeSet.liveManagedTotal;
+      return changeSet;
     },
     guardrails: (changeSet) =>
-      runGuardrailChecks(changeSet, [(resolved) => removalDeltaCap(resolved, { maxFraction })]),
+      runGuardrailChecks(changeSet, [
+        (resolved) => removalLiveCap(resolved, lastLiveManagedTotal, { maxFraction }),
+      ]),
     diffOptions: opts.diffOptions,
     allowGuardrailOverride: opts.allowGuardrailOverride,
     requestBudget: opts.requestBudget,
   });
+
+  // Surface tier-gated reads (recorded by cycles during fetchLive) as NOTE
+  // lines on the owning cycle's plan — an optimistic create for a slice the
+  // token couldn't read should not look like a clean plan.
+  for (const note of drainGatedSliceNotes()) {
+    const cr = result.cycles.find((c) => c.name === note.cycle && c.org === note.scopeId);
+    if (cr) {
+      cr.plan += `\nNOTE: ${note.slice}: read was tier-gated (403); planned entries may fail on apply`;
+    }
+  }
+
+  return result;
 }

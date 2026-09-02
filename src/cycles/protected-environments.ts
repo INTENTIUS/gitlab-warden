@@ -16,7 +16,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveProtectedEnvironment } from "../reconcile/live.js";
-import { charge, isForbidden } from "./_shared.js";
+import { charge, isForbidden, noteGatedSlice } from "./_shared.js";
 
 export type ProtectedEnvironmentsScope = Record<string, never>;
 
@@ -64,7 +64,10 @@ export const protectedEnvironmentsCycle: Cycle<ProtectedEnvironmentsScope> = {
       const raw = await client.paginate<GlProtectedEnv>(base);
       return { protectedEnvironments: raw.filter((e) => e.name).map(mapEnv) };
     } catch (err) {
-      if (isForbidden(err)) return {}; // Premium-gated → unmanaged
+      if (isForbidden(err)) {
+        noteGatedSlice("protected-environments", scopeId, "protectedEnvironments"); // Premium-gated → unmanaged
+        return {};
+      }
       throw err;
     }
   },

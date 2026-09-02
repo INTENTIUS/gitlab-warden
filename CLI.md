@@ -52,13 +52,18 @@ Never pass the token on the command line; export it and name the variable via
 ## Modes, guardrails, budget
 
 - **dry-run** (default): reads live state, prints a per-cycle plan
-  (`=== <cycle> @ <scope> ===`), changes nothing.
+  (`=== <cycle> @ <scope> ===`), changes nothing. When a declared slice's read
+  was tier-gated, the plan ends with
+  `NOTE: <slice>: read was tier-gated (403); planned entries may fail on apply`.
 - **apply**: applies each planned entry, then prints
   `Applied: N, Failed: M` per cycle with one `FAILED [type] key: error` line
   per failure (e.g. a 403 from a tier-gated endpoint).
-- **Guardrail**: `removalDeltaCap` refuses an apply whose deletes exceed 25%
-  of a cycle's planned pre-existing entries (updates + deletes; creates don't
-  dilute the fraction). A tripped guardrail prints
+- **Guardrail**: `removalLiveCap` refuses an apply whose deletes exceed 25%
+  of that cycle's **live** entries in the collections the node declares: one
+  stale delete on an otherwise-converged node passes (1 of N live), while a
+  typo'd mass-delete blocks. When a cycle has no live entries to measure
+  against, the check falls back to chant's plan-relative `removalDeltaCap`
+  (deletes over the plan's updates + deletes). A tripped guardrail prints
   `GUARDRAIL BLOCK: …`, skips that cycle's apply, and exits 1.
   `--allow-guardrail-override` applies anyway. (Deletes appear in a plan only
   for nodes whose policy declares `owned` — see [POLICY.md](POLICY.md); a node

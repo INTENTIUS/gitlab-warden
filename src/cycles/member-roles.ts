@@ -19,7 +19,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveMemberRole } from "../reconcile/live.js";
-import { charge, isForbidden } from "./_shared.js";
+import { charge, isForbidden, noteGatedSlice } from "./_shared.js";
 
 export type MemberRolesScope = Record<string, never>;
 
@@ -63,7 +63,10 @@ export const memberRolesCycle: Cycle<MemberRolesScope> = {
       const raw = await client.paginate<GlMemberRole>(base);
       return { memberRoles: raw.filter((r) => r.name).map(mapRole) };
     } catch (err) {
-      if (isForbidden(err)) return {}; // Ultimate-gated → unmanaged
+      if (isForbidden(err)) {
+        noteGatedSlice("member-roles", scopeId, "memberRoles"); // Ultimate-gated → unmanaged
+        return {};
+      }
       throw err;
     }
   },

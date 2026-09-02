@@ -25,7 +25,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LivePushRules } from "../reconcile/live.js";
-import { charge, isNotFound, isForbidden } from "./_shared.js";
+import { charge, isNotFound, isForbidden, noteGatedSlice } from "./_shared.js";
 
 export type PushRulesScope = Record<string, never>;
 
@@ -98,7 +98,11 @@ export const pushRulesCycle: Cycle<PushRulesScope> = {
       if (!raw || Object.keys(raw).length === 0) return {};
       return { pushRules: mapPushRule(raw) };
     } catch (err) {
-      if (isNotFound(err) || isForbidden(err)) return {}; // unset, or Premium-gated → unmanaged
+      if (isNotFound(err)) return {}; // no rule set yet → unmanaged
+      if (isForbidden(err)) {
+        noteGatedSlice("push-rules", scopeId, "pushRules"); // Premium-gated → unmanaged
+        return {};
+      }
       throw err;
     }
   },

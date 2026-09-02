@@ -102,12 +102,58 @@ export const RESOURCE_TYPE_ORDER = [
   "system-hook",
 ] as const;
 
+/** Result of `diff()` — the shared ChangeSet plus warden's guardrail denominator. */
+export interface DiffResult extends ChangeSet {
+  /**
+   * Number of LIVE entries across the collections this node's policy declares
+   * (the same declared-slice condition the diff itself uses). The runner feeds
+   * it to `removalLiveCap` as the denominator: chant's `removalDeltaCap`
+   * divides deletes by the PLAN's updates+deletes, so one stale delete in an
+   * otherwise-converged cycle reads as 100%; dividing by the live roster
+   * instead keeps a converged cycle's small cleanups under the cap.
+   */
+  liveManagedTotal: number;
+}
+
+/**
+ * The collection slices that can plan delete entries, paired desired-key ↔
+ * live-key (they happen to match). Single-object slices (settings, push rules)
+ * and create-only baselines never delete, so they stay out of the denominator.
+ */
+const LIVE_CAP_COLLECTIONS = [
+  "members",
+  "protectedBranches",
+  "protectedTags",
+  "protectedEnvironments",
+  "deployKeys",
+  "deployTokens",
+  "accessTokens",
+  "memberRoles",
+  "complianceFrameworks",
+  "approvalRules",
+  "variables",
+  "webhooks",
+  "integrations",
+  "instanceVariables",
+  "systemHooks",
+] as const satisfies readonly (keyof NodeConfig & keyof LiveNodeState)[];
+
+function countLiveManaged(desired: NodeConfig, live: LiveNodeState): number {
+  let n = 0;
+  for (const key of LIVE_CAP_COLLECTIONS) {
+    if (desired[key] === undefined) continue;
+    const entries = live[key];
+    if (Array.isArray(entries)) n += entries.length;
+  }
+  return n;
+}
+
 export function diff(
   node: string,
   desired: NodeConfig,
   live: LiveNodeState,
   opts: DiffOptions = {},
-): ChangeSet {
+): DiffResult {
   const entries: ChangeSetEntry[] = [];
 
   diffObject("group-settings", desired.groupSettings, live.groupSettings, GROUP_FIELDS, entries);
@@ -143,7 +189,7 @@ export function diff(
     return ti !== 0 ? ti : a.key.localeCompare(b.key);
   });
 
-  return { org: node, entries };
+  return { org: node, entries, liveManagedTotal: countLiveManaged(desired, live) };
 }
 
 // ---------------------------------------------------------------------------
@@ -521,10 +567,30 @@ function diffIntegrations(
   out: ChangeSetEntry[],
 ): void {
   if (desired === undefined) return;
+
+  // Declared `active: false` is an explicit disable. GitLab's PUT upsert
+  // (re)activates an integration no matter what, so the only way to turn one
+  // off is the DELETE path (DELETE /…/integrations/:name deactivates). These
+  // deletes bypass ownership gating: they carry declared intent, unlike the
+  // undeclared-entry prunes `owned` guards. A declared-off integration absent
+  // from live (live holds active ones only) is already converged.
+  const liveByName = new Map(live.map((i) => [i.name, i]));
+  const enabled: IntegrationConfig[] = [];
+  const declaredOff = new Set<string>();
+  for (const d of desired) {
+    if (d.active === false) {
+      declaredOff.add(d.name);
+      const l = liveByName.get(d.name);
+      if (l) out.push({ kind: "delete", resourceType: "integration", key: d.name, before: l });
+    } else {
+      enabled.push(d);
+    }
+  }
+
   diffCollection<IntegrationConfig, LiveIntegration>({
     resourceType: "integration",
-    desired: new Map(desired.map((i) => [i.name, i])),
-    live: new Map(live.map((i) => [i.name, i])),
+    desired: new Map(enabled.map((i) => [i.name, i])),
+    live: new Map(live.filter((i) => !declaredOff.has(i.name)).map((i) => [i.name, i])),
     compareFields: (di, li) =>
       di.active !== undefined && di.active !== li.active ? [{ field: "active", before: li.active, after: di.active }] : [],
     opts,

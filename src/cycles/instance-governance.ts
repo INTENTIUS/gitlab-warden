@@ -17,7 +17,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveWebhook, LiveVariable } from "../reconcile/live.js";
-import { charge, isForbidden, isNotFound } from "./_shared.js";
+import { charge, isForbidden, isNotFound, noteGatedSlice } from "./_shared.js";
 
 export type InstanceGovernanceScope = Record<string, never>;
 
@@ -66,11 +66,19 @@ function hookBody(w: WebhookConfig): Record<string, unknown> {
   return body;
 }
 
-async function tolerantPaginate<T>(client: GitLabClient, path: string): Promise<T[] | undefined> {
+async function tolerantPaginate<T>(
+  client: GitLabClient,
+  path: string,
+  onForbidden: () => void,
+): Promise<T[] | undefined> {
   try {
     return await client.paginate<T>(path);
   } catch (err) {
-    if (isForbidden(err) || isNotFound(err)) return undefined;
+    if (isForbidden(err)) {
+      onForbidden();
+      return undefined;
+    }
+    if (isNotFound(err)) return undefined;
     throw err;
   }
 }
@@ -92,12 +100,17 @@ export const instanceGovernanceCycle: Cycle<InstanceGovernanceScope> = {
       out.instanceSettings = await client.request<Record<string, unknown>>("GET", "/application/settings");
     } catch (err) {
       if (!isForbidden(err) && !isNotFound(err)) throw err;
+      if (isForbidden(err)) noteGatedSlice("instance-governance", scopeId, "instanceSettings");
     }
     charge(budget);
-    const hooks = await tolerantPaginate<GlHook>(client, "/hooks");
+    const hooks = await tolerantPaginate<GlHook>(client, "/hooks", () =>
+      noteGatedSlice("instance-governance", scopeId, "systemHooks"),
+    );
     if (hooks) out.systemHooks = hooks.map(mapHook).filter((h): h is LiveWebhook => h !== null);
     charge(budget);
-    const vars = await tolerantPaginate<GlVar>(client, "/admin/ci/variables");
+    const vars = await tolerantPaginate<GlVar>(client, "/admin/ci/variables", () =>
+      noteGatedSlice("instance-governance", scopeId, "instanceVariables"),
+    );
     if (vars) out.instanceVariables = vars.filter((v) => v.key).map(mapVar);
     return out;
   },

@@ -50,4 +50,33 @@ describe("integrationsCycle via runReconcile", () => {
     expect(result.cycles[0]!.counts.create).toBe(1);
     expect(client.calls.find((c) => c.method === "PUT")!.path).toBe("/projects/acme%2Fapi/integrations/slack");
   });
+
+  it("declared `active: false` on a live integration plans a delete (DELETE deactivates), no `owned` needed", async () => {
+    // GitLab's PUT upsert (re)activates, so a declared-off integration must
+    // take the DELETE path — and as explicit declared intent it bypasses
+    // ownership gating (this node declares no `owned`).
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project", integrations: [{ name: "slack", active: false }] } } };
+    const client = makeClient({}, { "/projects/acme%2Fapi/integrations": [{ slug: "slack", active: true }] });
+    // The removal cap still counts this delete (1 of 1 live = 100%), so raise
+    // the fraction — the point here is the DELETE-not-PUT apply path.
+    const result = await runReconcile({ config, client, cycles: [integrationsCycle], mode: "apply", removalDeltaCapFraction: 1 });
+    expect(result.cycles[0]!.counts).toEqual({ create: 0, update: 0, delete: 1 });
+    const del = client.calls.find((c) => c.method === "DELETE");
+    expect(del!.path).toBe("/projects/acme%2Fapi/integrations/slack");
+    expect(client.calls.filter((c) => c.method === "PUT")).toHaveLength(0); // never re-activated
+  });
+
+  it("declared `active: false` with no live integration is converged (no create, no delete)", async () => {
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project", integrations: [{ name: "slack", active: false }] } } };
+    const client = makeClient({}, { "/projects/acme%2Fapi/integrations": [] });
+    const result = await runReconcile({ config, client, cycles: [integrationsCycle], mode: "dry-run" });
+    expect(result.cycles[0]!.counts).toEqual({ create: 0, update: 0, delete: 0 });
+  });
+
+  it("an UNDECLARED live integration is still ownership-gated (no delete without `owned`)", async () => {
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project", integrations: [] } } };
+    const client = makeClient({}, { "/projects/acme%2Fapi/integrations": [{ slug: "jira", active: true }] });
+    const result = await runReconcile({ config, client, cycles: [integrationsCycle], mode: "dry-run" });
+    expect(result.cycles[0]!.counts.delete).toBe(0);
+  });
 });

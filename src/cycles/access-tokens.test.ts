@@ -23,6 +23,12 @@ describe("accessTokensCycle.fetchLive", () => {
     await accessTokensCycle.fetchLive(client, "group:acme", scope, makeBudget());
     expect(client.calls[0]!.path).toBe("/groups/acme/access_tokens");
   });
+  it("tolerates 403 (tier-gated on gitlab.com free): empty live, not an error", async () => {
+    const client = makeClient();
+    client.paginate = async () => { throw new Error("GET /groups/acme/access_tokens returned 403"); };
+    const live = await accessTokensCycle.fetchLive(client, "group:acme", scope, makeBudget());
+    expect(live).toEqual({});
+  });
 });
 
 describe("accessTokensCycle.apply", () => {
@@ -52,5 +58,16 @@ describe("accessTokensCycle via runReconcile", () => {
     expect(result.completed).toBe(true);
     const muts = client.calls.filter((c) => c.method !== "PAGINATE").map((c) => `${c.method} ${c.path}`);
     expect(muts).toEqual(expect.arrayContaining(["POST /projects/acme%2Fapi/access_tokens", "DELETE /projects/acme%2Fapi/access_tokens/5"]));
+  });
+
+  it("a 403 read skips the slice with a plan NOTE instead of a cycle error", async () => {
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project", accessTokens: [{ name: "ci-bot", scopes: ["api"] }] } } };
+    const client = makeClient();
+    client.paginate = async () => { throw new Error("GET /projects/acme%2Fapi/access_tokens returned 403"); };
+    const result = await runReconcile({ config, client, cycles: [accessTokensCycle], mode: "dry-run" });
+    expect(result.errored).toEqual([]);
+    expect(result.cycles[0]!.plan).toContain(
+      "NOTE: accessTokens: read was tier-gated (403); planned entries may fail on apply",
+    );
   });
 });

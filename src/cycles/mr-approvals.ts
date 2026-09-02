@@ -17,7 +17,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveApprovalRule, LiveApprovalSettings } from "../reconcile/live.js";
-import { charge, isForbidden, isNotFound } from "./_shared.js";
+import { charge, isForbidden, isNotFound, noteGatedSlice } from "./_shared.js";
 
 export type MrApprovalsScope = Record<string, never>;
 
@@ -103,6 +103,7 @@ export const mrApprovalsCycle: Cycle<MrApprovalsScope> = {
       out.approvalRules = rules.filter((r) => r.name).map(mapRule);
     } catch (err) {
       if (!isForbidden(err)) throw err;
+      noteGatedSlice("mr-approvals", scopeId, "approvalRules"); // Premium-gated → unmanaged
     }
     try {
       charge(budget);
@@ -110,6 +111,7 @@ export const mrApprovalsCycle: Cycle<MrApprovalsScope> = {
       out.approvalSettings = mapSettings(s);
     } catch (err) {
       if (!isForbidden(err) && !isNotFound(err)) throw err;
+      if (isForbidden(err)) noteGatedSlice("mr-approvals", scopeId, "approvalSettings");
     }
     return out;
   },

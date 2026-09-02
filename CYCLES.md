@@ -11,10 +11,12 @@ Common behavior, so it isn't repeated 19 times:
 
 - **Endpoints** are REST (`/api/v4`) unless marked GraphQL.
 - Premium/Ultimate-gated reads that 403 are tolerated: the read yields no
-  live state and the run continues instead of erroring. (A slice you declared
-  anyway then plans as a create, and its apply surfaces the 403 in the
-  per-cycle `failed[]` output with the API message.) The GraphQL cycles extend
-  the same tolerance to a CE/FOSS schema that lacks the EE field entirely.
+  live state and the run continues instead of erroring, and the cycle's plan
+  gains a `NOTE: <slice>: read was tier-gated (403); planned entries may fail
+  on apply` line. (A slice you declared anyway then plans as a create, and
+  its apply surfaces the 403 in the per-cycle `failed[]` output with the API
+  message.) The GraphQL cycles extend the same tolerance and NOTE to a
+  CE/FOSS schema that lacks the EE field entirely.
 - **Deletes** are ownership-gated (`isOwned`) at the diff layer. Ownership is
   declared per node in the policy: `owned: true` claims every collection the
   node's cycles reconcile, `owned: [member, …]` only the listed resource
@@ -116,10 +118,12 @@ integration works without per-service code. Config comes from
   included); `DELETE …/integrations/:slug` disables.
 - `properties` are write-only (GitLab masks them), so property-only drift is
   not detected; presence and `active` are diffed, and properties are
-  re-applied on every create/update. To disable an integration, remove its
-  entry (with `owned` covering `integration`) rather than setting
-  `active: false`: GitLab's PUT (re)activates, so only the DELETE path turns
-  one off.
+  re-applied on every create/update.
+- Declaring `active: false` turns an integration OFF: the diff plans a
+  delete (GitLab's DELETE deactivates; its PUT upsert would (re)activate).
+  This delete needs no `owned` — it carries explicit declared intent, unlike
+  the undeclared-entry prunes that ownership gates. A declared-off
+  integration that is already inactive is converged, planning nothing.
 
 ## access-tokens
 
@@ -127,7 +131,9 @@ Group/project access tokens (bot credentials) on **group** and **project**
 nodes, listed in `accessTokens[]` by token `name`.
 
 - Read: `GET /{groups|projects}/:id/access_tokens`, covering active,
-  non-revoked tokens.
+  non-revoked tokens. A 403 (tier-gated — e.g. group access tokens on the
+  gitlab.com free tier) is tolerated with the usual skip + plan NOTE rather
+  than a cycle error.
 - Apply: `POST` on create (name, scopes, access_level, expires_at);
   `DELETE …/:id` revokes on delete. There is no update path for a token that
   already exists.

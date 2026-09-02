@@ -19,7 +19,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveAccessToken } from "../reconcile/live.js";
-import { charge } from "./_shared.js";
+import { charge, isForbidden, noteGatedSlice } from "./_shared.js";
 
 export type AccessTokensScope = Record<string, never>;
 
@@ -61,11 +61,21 @@ export const accessTokensCycle: Cycle<AccessTokensScope> = {
   ): Promise<LiveNodeState> {
     if (parseScope(scopeId).kind === "instance") return {}; // groups/projects only
     charge(budget);
-    const raw = await client.paginate<GlAccessToken>(base(scopeId));
-    const accessTokens = raw
-      .filter((t) => t.name && t.revoked !== true && t.active !== false)
-      .map(mapToken);
-    return { accessTokens };
+    try {
+      const raw = await client.paginate<GlAccessToken>(base(scopeId));
+      const accessTokens = raw
+        .filter((t) => t.name && t.revoked !== true && t.active !== false)
+        .map(mapToken);
+      return { accessTokens };
+    } catch (err) {
+      // Tier-gated on gitlab.com free tier (group access tokens are paid) —
+      // tolerate like the other gated cycles: skip + NOTE, not a cycle error.
+      if (isForbidden(err)) {
+        noteGatedSlice("access-tokens", scopeId, "accessTokens");
+        return {};
+      }
+      throw err;
+    }
   },
 
   buildDesired(config: NodeConfig): NodeConfig {

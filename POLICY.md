@@ -25,15 +25,19 @@ Two behaviors worth knowing before you write one:
   member, webhook, or variable you did not declare is left alone. `owned: true`
   claims every collection warden reconciles on that node; a list such as
   `owned: [member, webhook]` claims only those resource types (the `[type]`
-  labels shown in plans). Where deletes are unlocked, the `removalDeltaCap`
-  guardrail still refuses any apply whose deletes exceed 25% of the plan's
-  pre-existing entries (its updates plus deletes; creates don't dilute the
-  fraction). (Library callers can pass `diffOptions.isOwned`, which overrides
-  the per-node declaration.)
+  labels shown in plans). Where deletes are unlocked, the `removalLiveCap`
+  guardrail still refuses any apply whose deletes exceed 25% of the node's
+  live entries in the declared collections — a converged node's single stale
+  delete passes, a typo'd mass-delete blocks. With no live entries to measure
+  against it falls back to the plan-relative cap (deletes over the plan's
+  updates plus deletes). (Library callers can pass `diffOptions.isOwned`,
+  which overrides the per-node declaration.)
 - **Tier-graceful.** Premium/Ultimate endpoints that return 403 on read are
-  tolerated and skipped, never fatal (a slice you declared anyway plans as a
-  create, and its apply lands the 403 in that cycle's `failed[]`). Slices below
-  are marked with the tier they need; everything unmarked works on Free/CE.
+  tolerated and skipped, never fatal: the cycle's plan gains a
+  `NOTE: <slice>: read was tier-gated (403); planned entries may fail on apply`
+  line, a slice you declared anyway plans as a create, and its apply lands the
+  403 in that cycle's `failed[]`. Slices below are marked with the tier they
+  need; everything unmarked works on Free/CE.
 
 ## Access levels
 
@@ -496,7 +500,7 @@ Entries in **`integrations[]`** are matched by the integration slug, such as
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `name` | string | **required** (key) | integrations | Free | GitLab integration slug |
-| `active` | boolean | optional | integrations | Free | enabled state (the diffable part). To disable, remove the entry under an `owned` node instead of setting `false` — the PUT apply path (re)activates |
+| `active` | boolean | optional | integrations | Free | enabled state. `active: false` declares the integration OFF: warden plans a deactivate via GitLab's DELETE path (the PUT upsert would (re)activate), with no `owned` needed — it is explicit declared intent, not an undeclared-entry prune |
 | `properties` | map | optional | integrations | Free | integration settings; write-only (GitLab masks them), so property-only drift isn't detected — they are re-applied on every create/update |
 
 Children under **`baselines[]`** are provisioned by existence only, on

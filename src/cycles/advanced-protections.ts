@@ -19,7 +19,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState } from "../reconcile/live.js";
-import { charge, isForbidden, isNotFound } from "./_shared.js";
+import { charge, isForbidden, isNotFound, noteGatedSlice } from "./_shared.js";
 
 export type AdvancedProtectionsScope = Record<string, never>;
 
@@ -46,7 +46,11 @@ export const advancedProtectionsCycle: Cycle<AdvancedProtectionsScope> = {
       if (typeof raw.inbound_enabled === "boolean") scope.inboundEnabled = raw.inbound_enabled;
       return { jobTokenScope: scope };
     } catch (err) {
-      if (isForbidden(err) || isNotFound(err)) return {};
+      if (isForbidden(err)) {
+        noteGatedSlice("advanced-protections", scopeId, "jobTokenScope");
+        return {};
+      }
+      if (isNotFound(err)) return {};
       throw err;
     }
   },
