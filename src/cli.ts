@@ -225,7 +225,7 @@ function printUsage(): void {
 
 async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
   const sub = argv[0];
-  if (!sub || sub === "--help" || sub === "-h") {
+  if (!sub || argv.includes("--help") || argv.includes("-h")) {
     printUsage();
     process.exit(0);
   }

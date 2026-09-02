@@ -6,8 +6,9 @@ One binary, one subcommand:
 gitlab-warden reconcile --config governance.yaml [flags]
 ```
 
-`gitlab-warden --help` prints usage; `gitlab-warden --version` prints the
-version (inlined from package.json at build time).
+`gitlab-warden --help` prints usage (`--help` works after a subcommand too);
+`gitlab-warden --version` prints the version (inlined from package.json at
+build time).
 
 ## Flags
 
