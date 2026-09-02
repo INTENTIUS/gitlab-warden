@@ -38,7 +38,7 @@ import { encodeId } from "../auth/client.js";
 import type { GovernanceConfig, NodeConfig, NodeKind } from "../config/types.js";
 import type { LiveNodeState } from "./live.js";
 import { diff } from "./diff.js";
-import { drainGatedSliceNotes, isNotFound } from "../cycles/_shared.js";
+import { drainPlanNotes, isNotFound } from "../cycles/_shared.js";
 import { nodeRenameCycle } from "../cycles/node-rename.js";
 
 export { BudgetExhaustedError } from "@intentius/chant/reconcile";
@@ -218,7 +218,7 @@ export async function runReconcile<TScope = unknown>(
       : opts.cycles;
 
   // Clear notes a previous (crashed/errored) run may have left behind.
-  drainGatedSliceNotes();
+  drainPlanNotes();
 
   const result = await coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
     client: opts.client,
@@ -244,13 +244,13 @@ export async function runReconcile<TScope = unknown>(
     requestBudget: opts.requestBudget,
   });
 
-  // Surface tier-gated reads (recorded by cycles during fetchLive) as NOTE
-  // lines on the owning cycle's plan — an optimistic create for a slice the
-  // token couldn't read should not look like a clean plan.
-  for (const note of drainGatedSliceNotes()) {
+  // Surface caveats recorded by cycles during fetchLive (tier-gated reads,
+  // shadowed live entries, …) as NOTE lines on the owning cycle's plan — an
+  // optimistic or partial plan should not look like a clean one.
+  for (const note of drainPlanNotes()) {
     const cr = result.cycles.find((c) => c.name === note.cycle && c.org === note.scopeId);
     if (cr) {
-      cr.plan += `\nNOTE: ${note.slice}: read was tier-gated (403); planned entries may fail on apply`;
+      cr.plan += `\nNOTE: ${note.message}`;
     }
   }
 

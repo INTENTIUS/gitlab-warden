@@ -37,33 +37,42 @@ export function charge(budget: RateBudget, n = 1): void {
 }
 
 // ---------------------------------------------------------------------------
-// Tier-gate plan notes
+// Plan notes (tier gates, shadowed live entries, …)
 // ---------------------------------------------------------------------------
 
-/** One tier-gated read, recorded by a cycle's fetchLive for the plan output. */
-export interface GatedSliceNote {
+/** One NOTE destined for a cycle's plan output, recorded during fetchLive. */
+export interface PlanNote {
   /** Cycle name (matches `cycle.name` / the run result's `name`). */
   cycle: string;
-  /** Kind-prefixed scope id the gated read was for. */
+  /** Kind-prefixed scope id the note is for. */
   scopeId: string;
-  /** The config slice whose read was gated, e.g. "approvalRules". */
-  slice: string;
+  /** The note text (rendered as `NOTE: <message>` after the plan). */
+  message: string;
 }
 
-const gatedSliceNotes: GatedSliceNote[] = [];
+const planNotes: PlanNote[] = [];
 
 /**
- * Record that a slice's read was tier-gated (403, or the GraphQL missing-field
- * analog on CE/FOSS) and yielded no live state. The runner drains these after
- * the run and appends a NOTE line to the owning cycle's plan, so an optimistic
- * plan (creates for a slice the token can't even read) is flagged instead of
- * silent. Module-level on purpose: reconcile runs are sequential per process.
+ * Record a NOTE for a cycle's plan. The runner drains these after the run and
+ * appends each as a NOTE line to the owning cycle's plan, so a caveat a
+ * cycle's read discovered (a gated slice, a shadowed live entry) is flagged
+ * instead of silent. Module-level on purpose: reconcile runs are sequential
+ * per process.
  */
-export function noteGatedSlice(cycle: string, scopeId: string, slice: string): void {
-  gatedSliceNotes.push({ cycle, scopeId, slice });
+export function notePlan(cycle: string, scopeId: string, message: string): void {
+  planNotes.push({ cycle, scopeId, message });
 }
 
-/** Drain (return and clear) all recorded gated-slice notes. */
-export function drainGatedSliceNotes(): GatedSliceNote[] {
-  return gatedSliceNotes.splice(0);
+/**
+ * Record that a slice's read was tier-gated (403, or the GraphQL
+ * missing-field analog on CE/FOSS) and yielded no live state, leaving an
+ * optimistic plan (creates for a slice the token can't even read).
+ */
+export function noteGatedSlice(cycle: string, scopeId: string, slice: string): void {
+  notePlan(cycle, scopeId, `${slice}: read was tier-gated (403); planned entries may fail on apply`);
+}
+
+/** Drain (return and clear) all recorded plan notes. */
+export function drainPlanNotes(): PlanNote[] {
+  return planNotes.splice(0);
 }

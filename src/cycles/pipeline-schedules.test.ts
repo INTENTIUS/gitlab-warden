@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { pipelineSchedulesCycle } from "./pipeline-schedules.js";
 import { makeClient, makeBudget } from "./_testutil.js";
 import { runReconcile } from "../reconcile/runner.js";
-import { drainGatedSliceNotes } from "./_shared.js";
+import { drainPlanNotes } from "./_shared.js";
 import type { GovernanceConfig } from "../config/types.js";
 
 const scope = {};
@@ -49,9 +49,33 @@ describe("pipelineSchedulesCycle.fetchLive", () => {
     };
     const live = await pipelineSchedulesCycle.fetchLive(client, PROJ, scope, makeBudget());
     expect(live).toEqual({});
-    expect(drainGatedSliceNotes()).toEqual([
-      { cycle: "pipeline-schedules", scopeId: PROJ, slice: "pipelineSchedules" },
+    expect(drainPlanNotes()).toEqual([
+      {
+        cycle: "pipeline-schedules",
+        scopeId: PROJ,
+        message: "pipelineSchedules: read was tier-gated (403); planned entries may fail on apply",
+      },
     ]);
+  });
+
+  it("notes duplicate live descriptions, naming the shadowed schedule ids", async () => {
+    const listed = [
+      { id: 11, description: "nightly", cron: "0 2 * * *", ref: "main" },
+      { id: 12, description: "nightly", cron: "0 3 * * *", ref: "main" },
+      { id: 13, description: "weekly", cron: "0 4 * * 1", ref: "main" },
+    ];
+    const client = makeClient(
+      Object.fromEntries(listed.map((s) => [`GET ${BASE}/${s.id}`, s])),
+      { [BASE]: listed },
+    );
+    const live = await pipelineSchedulesCycle.fetchLive(client, PROJ, scope, makeBudget());
+    expect(live.pipelineSchedules).toHaveLength(3);
+    const notes = drainPlanNotes();
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.cycle).toBe("pipeline-schedules");
+    expect(notes[0]!.message).toContain('share description "nightly"');
+    expect(notes[0]!.message).toContain("only id 12 is reconciled");
+    expect(notes[0]!.message).toContain("id(s) 11 are shadowed");
   });
 });
 

@@ -36,7 +36,7 @@ import type {
   LivePipelineSchedule,
   LivePipelineScheduleVariable,
 } from "../reconcile/live.js";
-import { charge, isForbidden, noteGatedSlice } from "./_shared.js";
+import { charge, isForbidden, noteGatedSlice, notePlan } from "./_shared.js";
 
 export type PipelineSchedulesScope = Record<string, never>;
 
@@ -148,6 +148,33 @@ async function applyVariables(
   }
 }
 
+/**
+ * GitLab gives schedules no unique-description constraint, but the diff keys
+ * live schedules by description, so duplicates shadow each other: only the
+ * last-listed one is reconciled and the rest silently disappear from the
+ * plan. Surface a plan NOTE naming the shadowed schedule ids instead.
+ */
+function noteShadowedDuplicates(schedules: LivePipelineSchedule[], scopeId: string): void {
+  const byDesc = new Map<string, LivePipelineSchedule[]>();
+  for (const s of schedules) {
+    const group = byDesc.get(s.description);
+    if (group) group.push(s);
+    else byDesc.set(s.description, [s]);
+  }
+  for (const [desc, group] of byDesc) {
+    if (group.length < 2) continue;
+    const visible = group[group.length - 1]!.id;
+    const shadowed = group.slice(0, -1).map((s) => s.id ?? "?");
+    notePlan(
+      "pipeline-schedules",
+      scopeId,
+      `pipelineSchedules: ${group.length} live schedules share description "${desc}" — ` +
+        `only id ${visible} is reconciled; id(s) ${shadowed.join(", ")} are shadowed. ` +
+        `Give every schedule a unique description.`,
+    );
+  }
+}
+
 export const pipelineSchedulesCycle: Cycle<PipelineSchedulesScope> = {
   name: "pipeline-schedules",
   verb: "org-unit",
@@ -172,6 +199,7 @@ export const pipelineSchedulesCycle: Cycle<PipelineSchedulesScope> = {
         const full = await client.request<GlSchedule>("GET", `${base}/${raw.id}`);
         schedules.push(mapSchedule({ ...raw, ...full }));
       }
+      noteShadowedDuplicates(schedules, scopeId);
       return { pipelineSchedules: schedules };
     } catch (err) {
       if (!isForbidden(err)) throw err;
