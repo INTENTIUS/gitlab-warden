@@ -292,6 +292,17 @@ export interface MemberRoleConfig {
  */
 export interface NodeConfig {
   kind: NodeKind;
+  /**
+   * Ownership declaration for this node's reconciled collections — the gate on
+   * planned deletes. Absent or `false` (the default): no deletes are planned in
+   * this node's scope; a live entry you did not declare is left alone. `true`:
+   * warden owns every resource collection it reconciles here, so a live entry
+   * absent from config becomes a delete. A string array: warden owns only the
+   * listed resource types (the ChangeSet entry types — `RESOURCE_TYPE_ORDER`
+   * in `src/reconcile/diff.ts`, e.g. `"member"`, `"webhook"`, `"variable"`).
+   * A caller-supplied `diffOptions.isOwned` (library use) overrides this.
+   */
+  owned?: boolean | string[];
   /** Group-node settings (`kind: "group"`). */
   groupSettings?: GroupSettings;
   /** Project-node settings (`kind: "project"`). */

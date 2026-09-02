@@ -12,10 +12,12 @@ Common behavior, so it isn't repeated 19 times:
 - **Tier**: Premium/Ultimate-gated reads that 403 are tolerated — the slice is
   treated as unmanaged there, never fatal. A 403 on apply surfaces in the
   per-cycle `failed[]` output with the API message.
-- **Deletes** are ownership-gated (`isOwned`) at the diff layer; the CLI
-  configures no ownership predicate, so CLI plans contain creates and updates
-  only. The delete paths listed below are what the cycle does when a library
-  caller enables ownership.
+- **Deletes** are ownership-gated (`isOwned`) at the diff layer. Ownership is
+  declared per node in the policy: `owned: true` claims every collection the
+  node's cycles reconcile, `owned: [member, …]` only the listed resource
+  types, and an absent `owned` (the default) means the node plans creates and
+  updates only ([POLICY.md](POLICY.md)). The delete paths listed below run
+  only in nodes that opted in.
 - **Keying**: config entries are matched to live entries by a human-stable key
   (name, url, username, …), never by GitLab's numeric ids; live numeric ids
   are carried along for the apply path but never diffed.

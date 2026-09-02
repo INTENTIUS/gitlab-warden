@@ -61,7 +61,12 @@ GitLab exposes two member rosters per group/project:
    (and only actionable if the operator declared that ancestor).
 3. **Ownership = a direct membership at this node.** `opts.isOwned("member", key)`
    gates deletes exactly as in the sibling wardens; for members, "owned" means
-   "present in this node's direct roster and not pinned out by config".
+   "present in this node's direct roster and not pinned out by config". The
+   runner derives the predicate from the node's `owned` declaration in the
+   policy (`owned: true`, or a resource-type list including `member` — see
+   [POLICY.md](POLICY.md)); a caller-supplied `diffOptions.isOwned` overrides
+   it. Either way it gates deletes of **direct** members only — an inherited
+   member never reaches the gate, because it is never in the diff baseline.
 
 ### Access levels
 Numeric scheme (name ↔ number), current as of GitLab 17.x–18.x:

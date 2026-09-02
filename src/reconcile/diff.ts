@@ -72,7 +72,11 @@ import { toAccessNumber } from "../config/access-levels.js";
 export type { ChangeSet, ChangeSetEntry, DiffOptions, FieldChange } from "@intentius/chant/reconcile";
 export { summarizeChangeSet, renderChangeSet } from "@intentius/chant/reconcile";
 
-const RESOURCE_TYPE_ORDER = [
+/**
+ * Every resource type a ChangeSet entry can carry, in render order. Also the
+ * vocabulary for a node's `owned: [...]` declaration (`NodeConfig.owned`).
+ */
+export const RESOURCE_TYPE_ORDER = [
   "group-settings",
   "project-settings",
   "push-rules",

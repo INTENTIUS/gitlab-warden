@@ -58,10 +58,10 @@ Never pass the token on the command line; export it and name the variable via
 - **Guardrail**: `removalDeltaCap` refuses an apply whose deletes exceed 25%
   of the pre-existing managed entries for a cycle. A tripped guardrail prints
   `GUARDRAIL BLOCK: …`, skips that cycle's apply, and exits 1.
-  `--allow-guardrail-override` applies anyway. (Note: through the CLI no
-  ownership predicate is configured, so plans contain creates and updates
-  only; the cap matters for library callers who enable deletes via
-  `diffOptions.isOwned`.)
+  `--allow-guardrail-override` applies anyway. (Deletes appear in a plan only
+  for nodes whose policy declares `owned` — see [POLICY.md](POLICY.md); a node
+  without it plans creates and updates only, and the cap protects the nodes
+  that do opt in.)
 - **Request budget**: a run has a shared budget of 1000 API requests. On
   exhaustion the run stops cleanly and prints `DEFERRED (budget): <cycles>`
   to stderr; run again (or narrow `--cycles`) to finish.

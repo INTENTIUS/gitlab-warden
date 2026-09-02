@@ -76,6 +76,90 @@ describe("runReconcile (GitLab adapter)", () => {
     expect(applied.sort()).toEqual(["a", "b"]);
   });
 
+  it("derives isOwned from a node's `owned: true` — a live-only entry becomes a delete", async () => {
+    const applied: string[] = [];
+    const live: LiveNodeState = {
+      members: [
+        { userId: 1, username: "a", accessLevel: 30 },
+        { userId: 9, username: "stray", accessLevel: 30 },
+      ],
+    };
+    const result = await runReconcile({
+      config: { nodes: { "acme/platform": { kind: "group", owned: true, members: [{ user: "a", accessLevel: 30 }] } } },
+      client: mockClient(),
+      cycles: [membersCycle(live, applied)],
+      mode: "dry-run",
+    });
+    const cr = result.cycles[0]!;
+    expect(cr.counts.delete).toBe(1);
+    expect(cr.plan).toContain("[member] stray");
+  });
+
+  it("plans no deletes when `owned` is absent (the default)", async () => {
+    const applied: string[] = [];
+    const live: LiveNodeState = {
+      members: [
+        { userId: 1, username: "a", accessLevel: 30 },
+        { userId: 9, username: "stray", accessLevel: 30 },
+      ],
+    };
+    const result = await runReconcile({
+      config: cfg(["a"]),
+      client: mockClient(),
+      cycles: [membersCycle(live, applied)],
+      mode: "dry-run",
+    });
+    expect(result.cycles[0]!.counts.delete).toBe(0);
+  });
+
+  it("owned: [types] unlocks deletes for the listed resource types only", async () => {
+    // A cycle spanning two collections, so the type filter is observable.
+    const live: LiveNodeState = {
+      members: [{ userId: 9, username: "stray", accessLevel: 30 }],
+      webhooks: [{ id: 7, url: "https://old.example.com/hook" }],
+    };
+    const twoSliceCycle: Cycle = {
+      name: "two-slice",
+      async fetchLive() {
+        return live;
+      },
+      buildDesired(config: NodeConfig) {
+        return { kind: config.kind, members: config.members, webhooks: config.webhooks };
+      },
+      async apply() {},
+    };
+    const result = await runReconcile({
+      config: {
+        nodes: { "acme/platform": { kind: "group", owned: ["webhook"], members: [], webhooks: [] } },
+      },
+      client: mockClient(),
+      cycles: [twoSliceCycle],
+      mode: "dry-run",
+    });
+    const cr = result.cycles[0]!;
+    expect(cr.counts.delete).toBe(1);
+    expect(cr.plan).toContain("[webhook] https://old.example.com/hook");
+    expect(cr.plan).not.toContain("[member] stray");
+  });
+
+  it("caller-supplied diffOptions.isOwned overrides the node's `owned` declaration", async () => {
+    const applied: string[] = [];
+    const live: LiveNodeState = {
+      members: [
+        { userId: 1, username: "a", accessLevel: 30 },
+        { userId: 9, username: "stray", accessLevel: 30 },
+      ],
+    };
+    const result = await runReconcile({
+      config: { nodes: { "acme/platform": { kind: "group", owned: true, members: [{ user: "a", accessLevel: 30 }] } } },
+      client: mockClient(),
+      cycles: [membersCycle(live, applied)],
+      mode: "dry-run",
+      diffOptions: { isOwned: () => false },
+    });
+    expect(result.cycles[0]!.counts.delete).toBe(0);
+  });
+
   it("removalDeltaCap blocks a mass-delete apply (guardrail reused from chant)", async () => {
     const applied: string[] = [];
     const live: LiveNodeState = {

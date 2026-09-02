@@ -18,13 +18,17 @@ cycles, the guardrails) serves the policy. It is the one file you must author.
 
 Two behaviors worth knowing before you write one:
 
-- **Deletes are ownership-gated.** The diff only emits a delete for a live entry
-  absent from config when an `isOwned` predicate says warden owns it. The CLI
-  does not configure one, so CLI runs plan **creates and updates only** — a live
-  member, webhook, or variable you did not declare is left alone. (Library
-  callers can pass `diffOptions.isOwned` to enable deletes; the
-  `removalDeltaCap` guardrail then refuses any apply that would delete more than
-  25% of pre-existing managed entries.)
+- **Deletes are opt-in, per node.** The diff only emits a delete for a live
+  entry absent from config when warden owns that resource — and ownership is
+  declared in the policy itself, per node, via `owned`. With `owned` absent
+  (the default) a node's plans contain **creates and updates only** — a live
+  member, webhook, or variable you did not declare is left alone. `owned: true`
+  claims every collection warden reconciles on that node; a list such as
+  `owned: [member, webhook]` claims only those resource types (the `[type]`
+  labels shown in plans). Where deletes are unlocked, the `removalDeltaCap`
+  guardrail still refuses any apply that would delete more than 25% of
+  pre-existing managed entries. (Library callers can pass `diffOptions.isOwned`,
+  which overrides the per-node declaration.)
 - **Tier-graceful.** Premium/Ultimate endpoints that return 403 on read are
   reported and skipped, never fatal. Slices below are marked with the tier they
   need; everything unmarked works on Free/CE.
@@ -61,6 +65,12 @@ nodes:
   # ========== a group node ==========
   acme/platform:
     kind: group
+
+    owned: [member, webhook]            # delete gate (optional; default: no deletes).
+                                        #   true → warden owns every collection it
+                                        #   reconciles here; a list owns only those
+                                        #   resource types (the [type] labels in plans);
+                                        #   absent/false → creates and updates only
 
     groupSettings:                      # cycle: group-settings
       name: Platform
@@ -282,6 +292,7 @@ label for instance nodes). Value = one node:
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `kind` | `group` \| `project` \| `instance` | **required** | all | Free | selects which endpoints every cycle uses for this node |
+| `owned` | boolean \| string[] | optional; default: no deletes | all | Free | delete gate for this node's collections: `true` = warden owns everything it reconciles here (live entries absent from config become deletes); a list owns only those resource types (the `[type]` labels in plans — `member`, `webhook`, `variable`, …; the full vocabulary is `RESOURCE_TYPE_ORDER` in `src/reconcile/diff.ts`); absent/`false` = creates and updates only |
 
 **`groupSettings`** (group nodes; `PUT /groups/:id`, partial update)
 

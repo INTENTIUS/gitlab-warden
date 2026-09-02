@@ -72,8 +72,24 @@ export interface RunReconcileOptions<TScope = unknown> {
 }
 
 /**
+ * Ownership predicate for one node, derived from its `owned` declaration:
+ * `true` owns every reconciled collection, a string array owns only the listed
+ * resource types, absent/`false` owns nothing (no deletes planned). Returns
+ * `undefined` for the latter so the diff's "no predicate → no deletes" default
+ * applies unchanged.
+ */
+function ownedPredicate(owned: NodeConfig["owned"]): DiffOptions["isOwned"] {
+  if (owned === undefined || owned === false) return undefined;
+  return (type: string) => owned === true || (Array.isArray(owned) && owned.includes(type));
+}
+
+/**
  * Run the GitLab governance reconcile loop, delegating to the shared runner with
  * warden's `diff` (kind-prefixed node id as scope id) and guardrails wired in.
+ *
+ * Deletes: per scope, a caller-supplied `diffOptions.isOwned` wins; otherwise
+ * the predicate is derived from that node's `owned` declaration (see
+ * `NodeConfig.owned`). Guardrails (`removalDeltaCap`) apply either way.
  */
 export async function runReconcile<TScope = unknown>(
   opts: RunReconcileOptions<TScope>,
@@ -92,7 +108,14 @@ export async function runReconcile<TScope = unknown>(
     cycles: opts.cycles,
     scope: opts.scope,
     mode: opts.mode,
-    diff: (scopeId, desired, live, dopts) => diff(scopeId, desired, live, dopts),
+    diff: (scopeId, desired, live, dopts) => {
+      // Per-scope ownership: the scope id keys straight into `scopes` (it was
+      // built above from the same node map), so resolve the node's `owned`
+      // declaration from there — `desired` is a cycle's buildDesired output
+      // and may not carry it.
+      const isOwned = dopts.isOwned ?? ownedPredicate(scopes[scopeId]?.owned);
+      return diff(scopeId, desired, live, { ...dopts, isOwned });
+    },
     guardrails: (changeSet) =>
       runGuardrailChecks(changeSet, [(resolved) => removalDeltaCap(resolved, { maxFraction })]),
     diffOptions: opts.diffOptions,

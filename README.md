@@ -2,46 +2,63 @@
 
 [![ci](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/ci.yml/badge.svg)](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/ci.yml)
 [![e2e](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/e2e.yml/badge.svg)](https://github.com/INTENTIUS/gitlab-warden/actions/workflows/e2e.yml)
+[![npm](https://img.shields.io/npm/v/@intentius/gitlab-warden)](https://www.npmjs.com/package/@intentius/gitlab-warden)
 
 Declarative governance for GitLab **groups & projects** — the whole surface, in one lightweight tool you run in CI.
 
 Docs site: https://intentius.io/gitlab-warden/
 
+The third warden, built on the shared provider-agnostic reconcile primitive in
+[`@intentius/chant/reconcile`](https://github.com/INTENTIUS/chant) — the same
+core behind [github-warden](https://github.com/INTENTIUS/github-warden) and
+[forgejo-warden](https://github.com/INTENTIUS/forgejo-warden). gitlab-warden
+supplies the GitLab layer: a REST + GraphQL client (configurable host for
+self-managed + GitLab.com), config + live-state types, a GitLab `diff()`, and
+the reconcile cycles.
+
+## What you need
+
+- A clone of this repo (`git clone https://github.com/INTENTIUS/gitlab-warden`).
+  The agent skill, the policy examples, and the CI templates live in it, and
+  setup ends with a warden pipeline in your group — so you'll have the repo
+  anyway.
+- A GitLab personal access token with `api` scope — Owner on the groups you'll
+  govern, Maintainer or above on projects ([SETUP.md](SETUP.md) walks through
+  creating one).
+- Node 22+.
+
+About ten minutes to a first dry-run plan. For a quick probe you don't need
+the checkout at all — the CLI runs straight off npm, reads only, and prints a
+plan without changing anything:
+
+```bash
+npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
+```
+
+The npm package is also what your pipeline installs later ([CI.md](CI.md)).
+Add `--base-url` for self-managed (defaults to gitlab.com). Full config +
+flags in [Usage](#usage) below.
+
 ## Set up with an agent
 
-This repo ships a Claude skill. From a clone, paste this into Claude Code (or
-any agent that reads repo skills) and fill in the placeholders:
+From a checkout, Claude Code picks up the skill in
+`.claude/skills/gitlab-warden` automatically. For other agents, run
+`npx skills add INTENTIUS/gitlab-warden`, or copy `.claude/skills/gitlab-warden`
+into `~/.claude/skills/`.
+
+Paste this and fill in the placeholders:
 
 ```text
-Use the gitlab-warden skill in this repo to help me set up governance for my
-GitLab group <GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes:
-policy for the groups and projects I care about (ask me which slices matter),
-then run a dry-run reconcile and walk me through the plan. Do not apply
-anything.
+Use the gitlab-warden skill to help me set up governance for my GitLab group
+<GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes: policy for the
+groups and projects I care about (ask me which slices matter), then run a
+dry-run reconcile and walk me through the plan. Do not apply anything.
 ```
 
 The skill points the agent at [POLICY.md](POLICY.md), [SETUP.md](SETUP.md),
 [CLI.md](CLI.md), and [CYCLES.md](CYCLES.md), and holds it to dry-run until
-you've reviewed the plan.
-
-## Install
-
-```bash
-# Dry-run — reads only, prints a plan, changes nothing.
-npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
-```
-
-Installs the `gitlab-warden` CLI. Add `--base-url` for self-managed (defaults to
-gitlab.com). Full config + flags in [Usage](#usage) below.
-
-The third [warden](https://github.com/INTENTIUS/github-warden), built on the shared
-provider-agnostic reconcile primitive in
-[`@intentius/chant/reconcile`](https://github.com/INTENTIUS/chant) — the same core
-behind [github-warden](https://github.com/INTENTIUS/github-warden) and
-[forgejo-warden](https://github.com/INTENTIUS/forgejo-warden). gitlab-warden
-supplies the GitLab layer: a REST + GraphQL client (configurable host for
-self-managed + GitLab.com), config + live-state types, a GitLab `diff()`, and the
-reconcile cycles.
+you've reviewed the plan. Deletes stay off entirely until you mark a node
+`owned` in the policy.
 
 ## What it is
 
