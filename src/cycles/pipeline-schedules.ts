@@ -262,19 +262,20 @@ export const pipelineSchedulesCycle: Cycle<PipelineSchedulesScope> = {
       return;
     }
 
-    // update
+    // update — partition the field changes complementarily: schedule-level
+    // drift PUTs the schedule, variable drift reconciles variables, and an
+    // update carrying both does both.
     const after = entry.after as PipelineScheduleConfig;
     const before = entry.before as LivePipelineSchedule;
-    const changedVarsOnly =
-      entry.fields !== undefined &&
-      entry.fields.length > 0 &&
-      entry.fields.every((f) => f.field === "variables");
+    const fields = entry.fields ?? [];
+    const scheduleDrift = fields.some((f) => f.field !== "variables");
+    const variableDrift = fields.some((f) => f.field === "variables");
     try {
-      if (!changedVarsOnly) {
+      if (scheduleDrift) {
         charge(budget);
         await client.request("PUT", `${base}/${sid}`, scheduleBody(after, false));
       }
-      if (after.variables !== undefined && entry.fields?.some((f) => f.field === "variables")) {
+      if (variableDrift && after.variables !== undefined) {
         await applyVariables(client, base, sid, after.variables, before.variables ?? [], budget);
       }
     } catch (err) {
