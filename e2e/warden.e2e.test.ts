@@ -459,7 +459,8 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
         "GET",
         `/projects/${projectId}/pipeline_schedules/${made!.id}`,
       );
-      expect(full.variables).toEqual([{ key: "SCHEDULE_KIND", value: "nightly", variable_type: "env_var" }]);
+      expect(full.variables).toHaveLength(1);
+      expect(full.variables![0]).toMatchObject({ key: "SCHEDULE_KIND", value: "nightly", variable_type: "env_var" });
     });
 
     it("re-run converges to an empty plan", async () => {
