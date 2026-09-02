@@ -109,10 +109,10 @@ export interface DiffResult extends ChangeSet {
   /**
    * Number of LIVE entries across the collections this node's policy declares
    * (the same declared-slice condition the diff itself uses). The runner feeds
-   * it to `removalLiveCap` as the denominator: chant's `removalDeltaCap`
-   * divides deletes by the PLAN's updates+deletes, so one stale delete in an
-   * otherwise-converged cycle reads as 100%; dividing by the live roster
-   * instead keeps a converged cycle's small cleanups under the cap.
+   * it to chant's `removalDeltaCap` as `managedTotal` (#2067): with a live
+   * denominator, deletes divide by the live roster instead of the plan's
+   * updates+deletes, so one stale delete in an otherwise-converged cycle reads
+   * as 1/N rather than 100%.
    */
   liveManagedTotal: number;
 }

@@ -5,7 +5,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { runReconcile, removalLiveCap, parseScope, nodeScopeId, type Cycle } from "./runner.js";
+import { removalDeltaCap } from "@intentius/chant/reconcile";
+import { runReconcile, parseScope, nodeScopeId, type Cycle } from "./runner.js";
 import { noteGatedSlice } from "../cycles/_shared.js";
 import type { GitLabClient } from "../auth/client.js";
 import type { NodeConfig, GovernanceConfig } from "../config/types.js";
@@ -161,7 +162,7 @@ describe("runReconcile (GitLab adapter)", () => {
     expect(result.cycles[0]!.counts.delete).toBe(0);
   });
 
-  it("removalLiveCap blocks a mass-delete apply", async () => {
+  it("removalDeltaCap blocks a mass-delete apply", async () => {
     const applied: string[] = [];
     const live: LiveNodeState = {
       members: Array.from({ length: 10 }, (_, i) => ({ userId: i, username: `m${i}`, accessLevel: 30 })),
@@ -184,7 +185,7 @@ const tenLive = (): LiveNodeState => ({
   members: Array.from({ length: 10 }, (_, i) => ({ userId: i, username: `m${i}`, accessLevel: 30 })),
 });
 
-describe("removalLiveCap (live-denominator removal guardrail)", () => {
+describe("removalDeltaCap wiring (live-denominator removal guardrail)", () => {
   it("a converged cycle's single stale delete passes: 1 of 10 live is 10%", async () => {
     const applied: string[] = [];
     const result = await runReconcile({
@@ -195,8 +196,8 @@ describe("removalLiveCap (live-denominator removal guardrail)", () => {
       diffOptions: { isOwned: () => true },
     });
     const cr = result.cycles[0]!;
-    // Plan-relative (chant's removalDeltaCap) would see 1 delete / 1 managed
-    // entry = 100% and block; the live denominator keeps this applyable.
+    // Plan-relative, the cap would see 1 delete / 1 managed entry = 100% and
+    // block; the live `managedTotal` denominator keeps this applyable.
     expect(cr.guardrails.ok).toBe(true);
     expect(cr.guardrailBlocked).toBe(false);
     expect(applied).toEqual(["m0"]);
@@ -215,13 +216,13 @@ describe("removalLiveCap (live-denominator removal guardrail)", () => {
     expect(cr.guardrailBlocked).toBe(true);
     expect(cr.guardrails.ok).toBe(false);
     if (!cr.guardrails.ok) {
-      expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalLiveCap");
+      expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalDeltaCap");
       expect(cr.guardrails.diagnostics[0]!.message).toContain("4 of 10 live managed entries");
     }
     expect(applied).toHaveLength(0);
   });
 
-  it("zero live entries falls back to chant's plan-relative removalDeltaCap", () => {
+  it("zero live entries falls back to the plan-relative denominator", () => {
     const changeSet = {
       org: "group:acme",
       entries: [
@@ -229,12 +230,14 @@ describe("removalLiveCap (live-denominator removal guardrail)", () => {
         { kind: "delete" as const, resourceType: "member", key: "b" },
       ],
     };
-    // 1 delete of 2 plan-managed entries = 50% > 25% → chant's cap trips.
-    const diag = removalLiveCap(changeSet, 0);
+    // managedTotal 0 is not a usable denominator → the cap stays plan-relative:
+    // 1 delete of 2 plan-managed entries = 50% > 25% → trips.
+    const diag = removalDeltaCap(changeSet, { maxFraction: 0.25, managedTotal: 0 });
     expect(diag).not.toBeNull();
     expect(diag!.guardrail).toBe("removalDeltaCap");
+    expect(diag!.message).not.toContain("live managed entries");
     // …and a plan with no deletes passes the fallback too.
-    expect(removalLiveCap({ org: "group:acme", entries: [] }, 0)).toBeNull();
+    expect(removalDeltaCap({ org: "group:acme", entries: [] }, { maxFraction: 0.25, managedTotal: 0 })).toBeNull();
   });
 
   it("captures the count from the immediately preceding diff (per scope × cycle sequencing)", async () => {

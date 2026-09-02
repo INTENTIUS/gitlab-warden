@@ -25,7 +25,7 @@ instead.
 |---|---|---|---|---|---|---|
 | group-settings | yes | yes | yes | yes | n/a (settings) | — |
 | project-settings | yes | yes | yes | yes | n/a (settings) | — |
-| members | yes | yes | yes | yes | yes (+ removalLiveCap block first) | — |
+| members | yes | yes | yes | yes | yes (+ removalDeltaCap block first) | — |
 | protected-branches | yes | yes | yes | yes (re-protect) | yes | — |
 | protected-tags | yes | yes | yes | yes (re-protect) | yes | — |
 | ci-variables | yes | yes | yes | yes | yes | — |

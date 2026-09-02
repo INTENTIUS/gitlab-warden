@@ -16,8 +16,9 @@
  * the whole run and the appended `node-rename` cycle applies the rename last.
  *
  * Guardrails: the removal cap (don't let a typo mass-delete), computed against
- * the LIVE roster via `removalLiveCap` below. A self-lockout guard (don't
- * strip the last Owner) can be layered in once the members cycle lands.
+ * the LIVE roster — chant's `removalDeltaCap` with the live denominator from
+ * `diff()` (`managedTotal`, #2067). A self-lockout guard (don't strip the last
+ * Owner) can be layered in once the members cycle lands.
  */
 
 import {
@@ -29,8 +30,6 @@ import type {
   Cycle as CoreCycle,
   ReconcileResult,
   DiffOptions,
-  ChangeSet,
-  GuardrailDiagnostic,
 } from "@intentius/chant/reconcile";
 import type { GitLabClient } from "../auth/client.js";
 import { encodeId } from "../auth/client.js";
@@ -168,45 +167,6 @@ function ownedPredicate(owned: NodeConfig["owned"]): DiffOptions["isOwned"] {
   return (type: string) => owned === true || (Array.isArray(owned) && owned.includes(type));
 }
 
-/** Options for `removalLiveCap`. */
-export interface RemovalLiveCapOptions {
-  /** Max fraction of live managed entries deletable in one apply. Default 0.25. */
-  maxFraction?: number;
-}
-
-/**
- * Warden's removal cap: refuse when planned deletes exceed `maxFraction` of
- * the LIVE managed entries for this cycle × scope (`liveManagedTotal`, from
- * `diff()`'s declared-slice count). Chant's `removalDeltaCap` divides by the
- * plan's updates+deletes, so a single stale delete in an otherwise-converged
- * cycle trips at 100%; against the live roster it is 1/N. With no live
- * entries (`liveManagedTotal === 0`) this falls back to chant's plan-relative
- * behavior so nothing gets less safe.
- *
- * Like chant's cap, expects a RENAME-RESOLVED change set (`runGuardrailChecks`
- * handles that).
- */
-export function removalLiveCap(
-  changeSet: ChangeSet,
-  liveManagedTotal: number,
-  opts: RemovalLiveCapOptions = {},
-): GuardrailDiagnostic | null {
-  const maxFraction = opts.maxFraction ?? 0.25;
-  if (liveManagedTotal <= 0) return removalDeltaCap(changeSet, { maxFraction });
-  const deletes = changeSet.entries.filter((e) => e.kind === "delete").length;
-  const fraction = deletes / liveManagedTotal;
-  if (fraction > maxFraction) {
-    return {
-      guardrail: "removalLiveCap",
-      message:
-        `${deletes} of ${liveManagedTotal} live managed entries (${Math.round(fraction * 100)}%) would be deleted, ` +
-        `exceeding the ${Math.round(maxFraction * 100)}% threshold. ` +
-        `Check for typos in config or raise maxFraction to proceed.`,
-    };
-  }
-  return null;
-}
-
 /**
  * Run the GitLab governance reconcile loop, delegating to the shared runner with
  * warden's `diff` (kind-prefixed node id as scope id) and guardrails wired in.
@@ -214,6 +174,10 @@ export function removalLiveCap(
  * Deletes: per scope, a caller-supplied `diffOptions.isOwned` wins; otherwise
  * the predicate is derived from that node's `owned` declaration (see
  * `NodeConfig.owned`). Guardrails (`removalDeltaCap`) apply either way.
+ * The cap runs with `managedTotal` set to the live denominator from `diff()`
+ * (`liveManagedTotal`): a converged cycle's one stale delete reads as 1/N of
+ * the live roster, not 1/1 of the plan. With no live entries the cap keeps
+ * chant's plan-relative behavior, so nothing gets less safe.
  */
 export async function runReconcile<TScope = unknown>(
   opts: RunReconcileOptions<TScope>,
@@ -249,10 +213,10 @@ export async function runReconcile<TScope = unknown>(
       ? [...opts.cycles, nodeRenameCycle as unknown as Cycle<TScope>]
       : opts.cycles;
 
-  // Denominator for `removalLiveCap`, captured from the immediately preceding
-  // `diff()` call. Sound because chant's loop is strictly sequential per
-  // scope × cycle — diff, then guardrails, on the same change set (locked by a
-  // test in runner.test.ts).
+  // Live denominator for `removalDeltaCap` (`managedTotal`), captured from the
+  // immediately preceding `diff()` call. Sound because chant's loop is strictly
+  // sequential per scope × cycle — diff, then guardrails, on the same change
+  // set (locked by a test in runner.test.ts).
   let lastLiveManagedTotal = 0;
 
   // Clear notes a previous (crashed/errored) run may have left behind.
@@ -276,7 +240,7 @@ export async function runReconcile<TScope = unknown>(
     },
     guardrails: (changeSet) =>
       runGuardrailChecks(changeSet, [
-        (resolved) => removalLiveCap(resolved, lastLiveManagedTotal, { maxFraction }),
+        (resolved) => removalDeltaCap(resolved, { maxFraction, managedTotal: lastLiveManagedTotal }),
       ]),
     diffOptions: opts.diffOptions,
     allowGuardrailOverride: opts.allowGuardrailOverride,

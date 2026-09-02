@@ -294,7 +294,7 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
       expect(roster.find((m) => m.username === SMOKE_USER)?.access_level).toBe(30);
     });
 
-    it("removalLiveCap blocks removing 1 of 2 live members at the default 25%", async () => {
+    it("removalDeltaCap blocks removing 1 of 2 live members at the default 25%", async () => {
       const ownedNode: GovernanceConfig["nodes"] = {
         [GROUP_PATH]: { ...membersOf([["root", 50]]), owned: ["member"] },
       };
@@ -302,7 +302,7 @@ suite("gitlab-warden e2e (Docker GitLab CE)", () => {
       expect(cr.counts.delete).toBe(1);
       expect(cr.guardrailBlocked).toBe(true);
       if (!cr.guardrails.ok) {
-        expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalLiveCap");
+        expect(cr.guardrails.diagnostics[0]!.guardrail).toBe("removalDeltaCap");
       }
     });
 
