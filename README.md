@@ -5,6 +5,25 @@
 
 Declarative governance for GitLab **groups & projects** — the whole surface, in one lightweight tool you run in CI.
 
+Docs site: https://intentius.io/gitlab-warden/
+
+## Set up with an agent
+
+This repo ships a Claude skill. From a clone, paste this into Claude Code (or
+any agent that reads repo skills) and fill in the placeholders:
+
+```text
+Use the gitlab-warden skill in this repo to help me set up governance for my
+GitLab group <GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes:
+policy for the groups and projects I care about (ask me which slices matter),
+then run a dry-run reconcile and walk me through the plan. Do not apply
+anything.
+```
+
+The skill points the agent at [POLICY.md](POLICY.md), [SETUP.md](SETUP.md),
+[CLI.md](CLI.md), and [CYCLES.md](CYCLES.md), and holds it to dry-run until
+you've reviewed the plan.
+
 ## Install
 
 ```bash
@@ -92,7 +111,8 @@ reported and skipped, never fatal.
 
 ## Tests
 
-`npm test` runs the unit suite (mock-client, fully offline). The [e2e suite](e2e/)
+`npm test` runs the unit suite (mock-client, fully offline). The
+[e2e suite](https://github.com/INTENTIUS/gitlab-warden/tree/main/e2e)
 is **fully hermetic** — it stands up GitLab CE via Docker Compose, mints a token,
 provisions its own group/project, exercises every cycle, and tears down (no
 external account or secrets):

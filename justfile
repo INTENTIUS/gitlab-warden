@@ -24,6 +24,14 @@ install:
 # Everything CI runs
 check: tsc test
 
+# Build the docs site locally (requires `pip install mkdocs-material`)
+docs:
+    ./mkdocs-stage.sh && mkdocs build --strict
+
+# Preview the docs site locally
+docs-serve:
+    ./mkdocs-stage.sh && mkdocs serve
+
 # Bump version, tag, and push to trigger the npm publish workflow
 release bump="patch":
     #!/usr/bin/env bash
