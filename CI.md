@@ -82,6 +82,35 @@ Notes:
   schedule plus a nightly full run) to stay well inside the 1000-request
   budget on large policies.
 
+## Running migrate in a pipeline
+
+The [migrate subcommand](MIGRATE.md) also runs fine inside CI. A common
+shape while a team moves over: keep the GitHub workflows as the source of
+truth for a transition window, and let a job re-translate them on every
+change, publishing the stitched pipeline and the SARIF findings as
+artifacts for review.
+
+```yaml
+migrate:translate:
+  stage: governance
+  image: node:22
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes: [".github/workflows/*"]
+  script:
+    - npx @intentius/gitlab-warden migrate .github/workflows/
+        -o migrated/
+        --report migrate-findings.sarif
+  artifacts:
+    paths: [migrated/, migrate-findings.sarif]
+    expire_in: 1 week
+```
+
+Add `--strict` to fail the job while error-severity findings remain, which
+turns "everything lossy has been reviewed" into a merge gate. The findings
+land on stderr in the job log; the SARIF file feeds any viewer that speaks
+it.
+
 ## From GitHub Actions
 
 If the policy repo lives on GitHub, the same commands work there, since

@@ -1,16 +1,19 @@
 # CLI reference
 
-One binary, one subcommand:
+One binary, two subcommands:
 
 ```sh
 gitlab-warden reconcile --config governance.yaml [flags]
+gitlab-warden migrate <path> [flags]
 ```
 
-`gitlab-warden --help` prints usage (`--help` works after a subcommand too);
-`gitlab-warden --version` prints the version (inlined from package.json at
-build time).
+`reconcile` is the governance loop this page documents; `migrate` translates
+GitHub Actions workflows into GitLab CI YAML and has its own page
+([MIGRATE.md](MIGRATE.md), flags included). `gitlab-warden --help` prints
+usage (`--help` works after a subcommand too); `gitlab-warden --version`
+prints the version (inlined from package.json at build time).
 
-## Flags
+## Reconcile flags
 
 | Flag | Default | Meaning |
 |---|---|---|
@@ -78,7 +81,7 @@ Never pass the token on the command line; export it and name the variable via
 | Code | Meaning |
 |---|---|
 | 0 | success — plan printed (dry-run) or everything applied |
-| 1 | guardrail block during apply |
+| 1 | guardrail block during apply (for `migrate --strict`: error-severity findings) |
 | 2 | argument or config error (bad flag, unknown cycle, unreadable/invalid config, missing token env var) |
 | 3 | runtime error (API failure, a cycle errored, or one or more apply entries failed) |
 

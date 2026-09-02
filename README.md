@@ -31,6 +31,10 @@ reconcile cycles with their GitLab `diff()`.
   walks through creating one).
 - Node 22+.
 
+Teams moving off GitHub Actions can start with
+`gitlab-warden migrate .github/workflows/`, which translates the existing
+workflows into a stitched `.gitlab-ci.yml` (the [migration guide](MIGRATE.md)).
+
 About ten minutes to a first dry-run plan. For a quick probe you don't need
 the checkout at all. The CLI runs straight off npm, reads only, and prints a
 plan without changing anything:

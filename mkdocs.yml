@@ -21,6 +21,7 @@ theme:
 nav:
   - Home: README.md
   - Policy: POLICY.md
+  - Migrate: MIGRATE.md
   - CLI: CLI.md
   - Cycles: CYCLES.md
   - CI pipelines: CI.md
