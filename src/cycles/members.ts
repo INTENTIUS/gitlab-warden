@@ -62,6 +62,7 @@ export const membersCycle: Cycle<MembersScope> = {
     _scope: MembersScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // no instance membership
     const { resource, path } = resourceFor(scopeId);
     charge(budget);
     // DIRECT members only — `/members`, never `/members/all` (DESIGN.md §2).
@@ -79,7 +80,7 @@ export const membersCycle: Cycle<MembersScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.members) return { kind: config.kind };
+    if (config.kind === "instance" || !config.members) return { kind: config.kind };
     return { kind: config.kind, members: config.members };
   },
 

@@ -79,8 +79,8 @@ nothing to drift or import and no lock to hold, and correction is continuous:
 a reconcile loop keeps running rather than applying once. Declarations are
 selective-by-omission with ownership-gated deletes, which lets you manage a
 slice of a large instance without claiming the rest. Dry-run is the default
-mode, and a removal cap plus lockout protection guard the apply path.
-Premium/Ultimate endpoints that 403 are reported and skipped, never fatal.
+mode, and a removal cap guards the apply path. Premium/Ultimate endpoints that
+403 on read are tolerated and skipped, never fatal.
 
 ### Flagship: push-rule drift
 
@@ -95,8 +95,8 @@ warden applies across the *entire* governance surface.
 
 | Scope | Cycles |
 |-------|--------|
-| **Group** | settings · members · subgroup provisioning · variables · webhooks · push rules · access tokens · protected environments · integrations · MR approval settings · compliance frameworks · security policies · member roles |
-| **Project** | settings · members · protected branches · protected tags · protected environments · push rules · MR approvals · variables · webhooks · integrations · deploy keys/tokens · access tokens · advanced protections (job-token scope, registry/package protection) · compliance assignment · security policy attachment |
+| **Group** | settings · members · subgroup/project provisioning · variables · webhooks · push rules · deploy tokens · access tokens · protected environments · integrations · compliance frameworks · security policies · member roles |
+| **Project** | settings · members · protected branches · protected tags · protected environments · push rules · MR approvals · variables · webhooks · integrations · deploy keys/tokens · access tokens · advanced protections (job-token scope) · security policy attachment |
 | **Instance** (self-managed) | application settings · instance CI/CD variables · system hooks · custom member roles |
 
 REST for most of it; **GraphQL** for the few surfaces that require it
@@ -139,8 +139,9 @@ tier-gated endpoints handled as described above.
 `npm test` runs the unit suite (mock-client, fully offline). The
 [e2e suite](https://github.com/INTENTIUS/gitlab-warden/tree/main/e2e)
 is **fully hermetic**. It stands up GitLab CE via Docker Compose and
-provisions its own group and project with no external account or secrets;
-it exercises every cycle and then tears down:
+provisions its own group and project with no external account or secrets.
+It exercises every cycle's read path (asserting it stays read-only), runs one
+real apply behind an opt-in flag, and tears down:
 
 ```sh
 eval "$(npm run --silent e2e:up)"   # compose up + mint token (GitLab CE is slow)
@@ -151,8 +152,8 @@ npm run e2e:down
 ## Inheritance-aware membership
 
 GitLab is a *tree* of nested groups with inherited membership rather than a
-flat org. Membership is diffed against **direct** members (`/members`) while
-effective members (`/members/all`) are read for context only. An inherited
+flat org. Membership is diffed against **direct** members (`/members`); the
+effective roster (`/members/all`) is never consulted. An inherited
 member is **never** treated as deletable drift (the DELETE would fail, since
 the grant lives at an ancestor). The
 [scope and inheritance model](DESIGN.md) documents the rules the membership

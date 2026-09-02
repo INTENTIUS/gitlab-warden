@@ -29,8 +29,9 @@ Safety rules (from the code, non-negotiable):
   and have a human review the DELETE entries before any apply.
 - Exit 1 means a guardrail block (the removal cap tripped): stop and ask.
   `--allow-guardrail-override` requires explicit human approval.
-- Premium/Ultimate endpoints returning 403 on lower tiers are expected — they
-  are reported and skipped, not errors.
+- Premium/Ultimate endpoints returning 403 on lower tiers are expected — the
+  read is tolerated and skipped, not an error (an apply of a tier-gated slice
+  surfaces the 403 in that cycle's `failed[]`).
 
 Start with a narrow dry-run (`--cycles` limits the surface) and widen from
 there.

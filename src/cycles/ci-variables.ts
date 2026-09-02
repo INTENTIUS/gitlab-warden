@@ -73,6 +73,7 @@ export const ciVariablesCycle: Cycle<CiVariablesScope> = {
     _scope: CiVariablesScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // instance vars are instance-governance's job
     const { base } = resourceFor(scopeId);
     charge(budget);
     const raw = await client.paginate<GlVariable>(base);
@@ -80,8 +81,17 @@ export const ciVariablesCycle: Cycle<CiVariablesScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.variables) return { kind: config.kind };
-    return { kind: config.kind, variables: config.variables };
+    if (config.kind === "instance" || !config.variables) return { kind: config.kind };
+    // Resolve the documented `GITLAB_VAR_<KEY>` fallback here so an env-sourced
+    // value participates in the diff (drift is detected and corrected), not
+    // just in the create body. With neither config value nor env var, `value`
+    // stays undefined: presence-only for the diff, "" on create.
+    const variables = config.variables.map((v) => {
+      if (v.value !== undefined) return v;
+      const env = process.env[`GITLAB_VAR_${v.key}`];
+      return env !== undefined ? { ...v, value: env } : v;
+    });
+    return { kind: config.kind, variables };
   },
 
   async apply(

@@ -26,12 +26,14 @@ Two behaviors worth knowing before you write one:
   claims every collection warden reconciles on that node; a list such as
   `owned: [member, webhook]` claims only those resource types (the `[type]`
   labels shown in plans). Where deletes are unlocked, the `removalDeltaCap`
-  guardrail still refuses any apply that would delete more than 25% of
-  pre-existing managed entries. (Library callers can pass `diffOptions.isOwned`,
-  which overrides the per-node declaration.)
+  guardrail still refuses any apply whose deletes exceed 25% of the plan's
+  pre-existing entries (its updates plus deletes; creates don't dilute the
+  fraction). (Library callers can pass `diffOptions.isOwned`, which overrides
+  the per-node declaration.)
 - **Tier-graceful.** Premium/Ultimate endpoints that return 403 on read are
-  reported and skipped, never fatal. Slices below are marked with the tier they
-  need; everything unmarked works on Free/CE.
+  tolerated and skipped, never fatal (a slice you declared anyway plans as a
+  create, and its apply lands the 403 in that cycle's `failed[]`). Slices below
+  are marked with the tier they need; everything unmarked works on Free/CE.
 
 ## Access levels
 
@@ -468,7 +470,7 @@ CI variables in **`variables[]`** are identified by `key` plus
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `key` | string | **required** (key) | ci-variables | Free | variable name |
-| `value` | string | optional; falls back to `$GITLAB_VAR_<KEY>`, else `""` | ci-variables | Free | value; keep secrets out of config by exporting `GITLAB_VAR_<KEY>` in the environment instead |
+| `value` | string | optional; falls back to `$GITLAB_VAR_<KEY>` | ci-variables | Free | value; keep secrets out of config by exporting `GITLAB_VAR_<KEY>` instead — an env-sourced value is diffed and drift-corrected like a committed one. With neither, the value isn't diffed (presence-only) and a create writes `""` |
 | `environmentScope` | string | optional (`*` in the diff key when unset) | ci-variables | Free (scoping: Premium) | environment scope; part of the identity key |
 | `protected` | boolean | optional | ci-variables | Free | only exposed to protected branches/tags |
 | `masked` | boolean | optional | ci-variables | Free | masked in job logs |
@@ -494,7 +496,7 @@ Entries in **`integrations[]`** are matched by the integration slug, such as
 | Field | Type | Required / default | Cycle | Tier | Meaning |
 |---|---|---|---|---|---|
 | `name` | string | **required** (key) | integrations | Free | GitLab integration slug |
-| `active` | boolean | optional | integrations | Free | enabled state (the diffable part) |
+| `active` | boolean | optional | integrations | Free | enabled state (the diffable part). To disable, remove the entry under an `owned` node instead of setting `false` — the PUT apply path (re)activates |
 | `properties` | map | optional | integrations | Free | integration settings; write-only (GitLab masks them), so property-only drift isn't detected — they are re-applied on every create/update |
 
 Children under **`baselines[]`** are provisioned by existence only, on
@@ -518,9 +520,12 @@ requires an admin token).
 |---|---|---|---|---|---|
 | *(any key)* | any | optional | instance-governance | Free (self-managed) | generic passthrough: each key is compared against `GET /application/settings` and applied via `PUT` verbatim, snake_case as GitLab names it (e.g. `signup_enabled`) |
 
-System hooks in **`systemHooks[]`** share the `webhooks[]` shape and are
-reconciled against `GET/POST/DELETE /hooks`; no update endpoint exists, so
-drift is fixed by delete + re-create.
+System hooks in **`systemHooks[]`** share the `webhooks[]` shape, though the
+system-hooks API only carries `url`, `pushEvents`, `tagPushEvents`,
+`mergeRequestsEvents`, `enableSslVerification`, and `token` (leave the other
+event flags unset on instance nodes). They are reconciled against
+`GET/POST/DELETE /hooks`; no update endpoint exists, so drift is fixed by
+delete + re-create.
 
 Instance variables in **`instanceVariables[]`** look like `variables[]`
 without a meaningful `environmentScope`, and they live at

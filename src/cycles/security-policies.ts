@@ -20,7 +20,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState } from "../reconcile/live.js";
-import { charge, isForbidden } from "./_shared.js";
+import { charge, isForbidden, isMissingGraphQlField } from "./_shared.js";
 
 export type SecurityPoliciesScope = Record<string, never>;
 
@@ -60,16 +60,21 @@ export const securityPoliciesCycle: Cycle<SecurityPoliciesScope> = {
       const data = await client.graphql<NodeResult>(kind === "group" ? groupQuery : projectQuery, { fullPath: path });
       const node = kind === "group" ? data.group : data.project;
       const linked = node?.securityPolicyProject?.fullPath;
-      return { securityPolicy: linked ? { policyProject: linked } : {} };
+      // "" = nothing linked. Normalized (never absent) so a desired slice with
+      // an unset/empty policyProject diffs against it and plans an unlink.
+      return { securityPolicy: { policyProject: linked ?? "" } };
     } catch (err) {
-      if (isForbidden(err)) return {};
+      // 403 (tier-gated) or a CE/FOSS schema without the EE field → unmanaged.
+      if (isForbidden(err) || isMissingGraphQlField(err)) return {};
       throw err;
     }
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
     if (config.kind === "instance" || !config.securityPolicy) return { kind: config.kind };
-    return { kind: config.kind, securityPolicy: config.securityPolicy };
+    // Normalize "unset → unlink": an absent policyProject would be skipped by
+    // the field diff, so pin it to "" (which the apply path treats as unassign).
+    return { kind: config.kind, securityPolicy: { policyProject: config.securityPolicy.policyProject ?? "" } };
   },
 
   async apply(

@@ -78,7 +78,34 @@ describe("ciVariablesCycle.apply", () => {
   });
 });
 
+describe("ciVariablesCycle.buildDesired", () => {
+  it("resolves an omitted value from GITLAB_VAR_<KEY> so drift in it is diffed", () => {
+    process.env.GITLAB_VAR_SECRET = "from-env";
+    const desired = ciVariablesCycle.buildDesired(
+      { kind: "group", variables: [{ key: "SECRET" }, { key: "PLAIN", value: "x" }] },
+      "group:acme",
+      scope,
+    );
+    expect(desired.variables).toEqual([{ key: "SECRET", value: "from-env" }, { key: "PLAIN", value: "x" }]);
+    delete process.env.GITLAB_VAR_SECRET;
+  });
+  it("leaves value unset when neither config nor env provides one (presence-only)", () => {
+    const desired = ciVariablesCycle.buildDesired({ kind: "group", variables: [{ key: "UNSET" }] }, "group:acme", scope);
+    expect(desired.variables).toEqual([{ key: "UNSET" }]);
+  });
+});
+
 describe("ciVariablesCycle via runReconcile", () => {
+  it("corrects drift in an env-sourced value (GITLAB_VAR_<KEY>)", async () => {
+    process.env.GITLAB_VAR_SECRET = "correct";
+    const config: GovernanceConfig = { nodes: { acme: { kind: "group", variables: [{ key: "SECRET" }] } } };
+    const client = makeClient({}, { "/groups/acme/variables": [{ key: "SECRET", value: "drifted" }] });
+    const result = await runReconcile({ config, client, cycles: [ciVariablesCycle], mode: "apply" });
+    expect(result.completed).toBe(true);
+    expect(result.cycles[0]!.counts.update).toBe(1);
+    expect(client.calls.find((c) => c.method === "PUT")!.body).toMatchObject({ value: "correct" });
+    delete process.env.GITLAB_VAR_SECRET;
+  });
   it("updates a drifted variable value", async () => {
     const config: GovernanceConfig = { nodes: { acme: { kind: "group", variables: [{ key: "ENV", value: "prod" }] } } };
     const client = makeClient({}, { "/groups/acme/variables": [{ key: "ENV", value: "staging" }] });

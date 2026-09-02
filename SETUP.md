@@ -17,7 +17,7 @@ Or install the `gitlab-warden` binary globally:
 npm install -g @intentius/gitlab-warden
 ```
 
-Node 20+ (the CLI is a single bundled ESM file; `yaml` is its only runtime
+Node 22+ (the CLI is a single bundled ESM file; `yaml` is its only runtime
 dependency beside the shared reconcile core).
 
 ## 2. Create a token
@@ -87,9 +87,11 @@ npx @intentius/gitlab-warden reconcile --config governance.yaml
 Dry-run is the default mode: it reads live state and prints one plan section
 per cycle and node (`=== push-rules @ group:acme/platform ===`), changing
 nothing. Slices you didn't declare produce no entries (selective-by-omission).
-On a Free/CE instance the push-rules read 403s and is skipped with a note,
-which is normal tier-graceful behavior rather than an error. Live things you
-didn't declare are left alone, and nothing is ever deleted by a CLI run.
+On a Free/CE instance the push-rules read 403s and is tolerated rather than
+treated as an error; because the slice is declared here anyway, the plan shows
+it as a create, and an apply would surface the 403 in that cycle's `failed[]`
+output. Live things you didn't declare are left alone, and a policy without
+`owned` (like this one) never plans a delete.
 
 Narrow the run while iterating (`--cycles push-rules,protected-branches`),
 widen the policy node by node, and only reach for `--mode apply` once the
@@ -130,7 +132,8 @@ npx @intentius/gitlab-warden reconcile \
 with the password from `e2e/docker-compose.yml`; once a group exists,
 `baselines` entries can provision everything under it.) The e2e suite itself
 (`npm run test:e2e:run`) provisions its own group/project and exercises every
-cycle against this stack. Tear it all down, state included:
+cycle's read path against this stack (plus one opt-in apply). Tear it all
+down, state included:
 
 ```sh
 npm run e2e:down

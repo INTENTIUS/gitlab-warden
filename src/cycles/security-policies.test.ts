@@ -13,13 +13,18 @@ describe("securityPoliciesCycle.fetchLive", () => {
     const live = await securityPoliciesCycle.fetchLive(client, PROJECT, scope, makeBudget());
     expect(live.securityPolicy).toEqual({ policyProject: "acme/policies" });
   });
-  it("empty when nothing is linked; tolerates 403; no-op on instance", async () => {
+  it("normalizes 'nothing linked' to policyProject: ''; tolerates 403; no-op on instance", async () => {
     const c1 = makeClient({}, {}, { ProjectSecurityPolicyProject: { project: { securityPolicyProject: null } } });
-    expect(await securityPoliciesCycle.fetchLive(c1, PROJECT, scope, makeBudget())).toEqual({ securityPolicy: {} });
+    expect(await securityPoliciesCycle.fetchLive(c1, PROJECT, scope, makeBudget())).toEqual({ securityPolicy: { policyProject: "" } });
     const c2 = makeClient();
     c2.graphql = async () => { throw new Error("403 Forbidden"); };
     expect(await securityPoliciesCycle.fetchLive(c2, PROJECT, scope, makeBudget())).toEqual({});
     expect(await securityPoliciesCycle.fetchLive(makeClient(), "instance:@instance", scope, makeBudget())).toEqual({});
+  });
+  it("tolerates a CE/FOSS schema without the EE field", async () => {
+    const c = makeClient();
+    c.graphql = async () => { throw new Error("GraphQL error: Field 'securityPolicyProject' doesn't exist on type 'Project'"); };
+    expect(await securityPoliciesCycle.fetchLive(c, PROJECT, scope, makeBudget())).toEqual({});
   });
 });
 
@@ -60,5 +65,15 @@ describe("securityPoliciesCycle via runReconcile", () => {
     const result = await runReconcile({ config, client, cycles: [securityPoliciesCycle], mode: "apply" });
     expect(result.completed).toBe(true);
     expect(client.calls.some((c) => c.path.includes("securityPolicyProjectAssign"))).toBe(true);
+  });
+  it("unset policyProject plans an unlink of a linked project (docs: empty/unset → unlink)", async () => {
+    const config: GovernanceConfig = { nodes: { "acme/api": { kind: "project", securityPolicy: {} } } };
+    const client = makeClient({}, {}, {
+      ProjectSecurityPolicyProject: { project: { securityPolicyProject: { fullPath: "acme/policies" } } },
+    });
+    const result = await runReconcile({ config, client, cycles: [securityPoliciesCycle], mode: "apply" });
+    expect(result.completed).toBe(true);
+    expect(result.cycles[0]!.counts.update).toBe(1);
+    expect(client.calls.some((c) => c.path.includes("securityPolicyProjectUnassign"))).toBe(true);
   });
 });

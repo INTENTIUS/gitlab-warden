@@ -16,6 +16,16 @@ export function isForbidden(err: unknown): boolean {
 }
 
 /**
+ * True when a GraphQL error says the queried field is absent from the schema —
+ * GitLab CE/FOSS builds lack EE-licensed fields entirely (e.g.
+ * "Field 'complianceFrameworks' doesn't exist on type 'Group'"), so tier-gated
+ * GraphQL reads must tolerate this the way REST reads tolerate a 403.
+ */
+export function isMissingGraphQlField(err: unknown): boolean {
+  return err instanceof Error && /doesn'?t exist on type/i.test(err.message);
+}
+
+/**
  * Charge one budget unit, throwing `BudgetExhaustedError` first if drained.
  * The runner converts that into deferred work rather than a failure.
  */

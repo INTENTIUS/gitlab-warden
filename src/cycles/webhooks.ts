@@ -76,6 +76,7 @@ export const webhooksCycle: Cycle<WebhooksScope> = {
     _scope: WebhooksScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // system hooks are instance-governance's job
     const { base } = resourceFor(scopeId);
     charge(budget);
     const raw = await client.paginate<GlHook>(base);
@@ -83,7 +84,7 @@ export const webhooksCycle: Cycle<WebhooksScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.webhooks) return { kind: config.kind };
+    if (config.kind === "instance" || !config.webhooks) return { kind: config.kind };
     return { kind: config.kind, webhooks: config.webhooks };
   },
 

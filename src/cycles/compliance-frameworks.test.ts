@@ -21,6 +21,11 @@ describe("complianceFrameworksCycle.fetchLive", () => {
     c.graphql = async () => { throw new Error("403 Forbidden"); };
     expect(await complianceFrameworksCycle.fetchLive(c, GROUP, scope, makeBudget())).toEqual({});
   });
+  it("tolerates a CE/FOSS schema without the EE field", async () => {
+    const c = makeClient();
+    c.graphql = async () => { throw new Error("GraphQL error: Field 'complianceFrameworks' doesn't exist on type 'Group'"); };
+    expect(await complianceFrameworksCycle.fetchLive(c, GROUP, scope, makeBudget())).toEqual({});
+  });
 });
 
 describe("complianceFrameworksCycle.apply", () => {

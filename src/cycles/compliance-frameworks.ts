@@ -19,7 +19,7 @@ import type { ChangeSetEntry } from "../reconcile/diff.js";
 import type { Cycle, RateBudget } from "../reconcile/runner.js";
 import { parseScope } from "../reconcile/runner.js";
 import type { LiveNodeState, LiveComplianceFramework } from "../reconcile/live.js";
-import { charge, isForbidden } from "./_shared.js";
+import { charge, isForbidden, isMissingGraphQlField } from "./_shared.js";
 
 export type ComplianceFrameworksScope = Record<string, never>;
 
@@ -79,7 +79,8 @@ export const complianceFrameworksCycle: Cycle<ComplianceFrameworksScope> = {
         });
       return { complianceFrameworks };
     } catch (err) {
-      if (isForbidden(err)) return {};
+      // 403 (tier-gated) or a CE/FOSS schema without the EE field → unmanaged.
+      if (isForbidden(err) || isMissingGraphQlField(err)) return {};
       throw err;
     }
   },

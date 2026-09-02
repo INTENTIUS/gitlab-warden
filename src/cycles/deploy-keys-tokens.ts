@@ -65,6 +65,7 @@ export const deployKeysTokensCycle: Cycle<DeployKeysTokensScope> = {
     budget: RateBudget,
   ): Promise<LiveNodeState> {
     const { kind, path } = parseScope(scopeId);
+    if (kind === "instance") return {}; // groups/projects only
     const out: LiveNodeState = {};
     if (kind === "project") {
       charge(budget);
@@ -79,6 +80,7 @@ export const deployKeysTokensCycle: Cycle<DeployKeysTokensScope> = {
 
   buildDesired(config: NodeConfig): NodeConfig {
     const out: NodeConfig = { kind: config.kind };
+    if (config.kind === "instance") return out;
     if (config.kind === "project" && config.deployKeys !== undefined) out.deployKeys = config.deployKeys;
     if (config.deployTokens !== undefined) out.deployTokens = config.deployTokens;
     return out;

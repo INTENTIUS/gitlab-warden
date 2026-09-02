@@ -59,6 +59,7 @@ export const accessTokensCycle: Cycle<AccessTokensScope> = {
     _scope: AccessTokensScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // groups/projects only
     charge(budget);
     const raw = await client.paginate<GlAccessToken>(base(scopeId));
     const accessTokens = raw
@@ -68,7 +69,7 @@ export const accessTokensCycle: Cycle<AccessTokensScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.accessTokens) return { kind: config.kind };
+    if (config.kind === "instance" || !config.accessTokens) return { kind: config.kind };
     return { kind: config.kind, accessTokens: config.accessTokens };
   },
 

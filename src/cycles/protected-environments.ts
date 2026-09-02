@@ -57,6 +57,7 @@ export const protectedEnvironmentsCycle: Cycle<ProtectedEnvironmentsScope> = {
     _scope: ProtectedEnvironmentsScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // groups/projects only
     const { base } = resourceFor(scopeId);
     charge(budget);
     try {
@@ -69,7 +70,7 @@ export const protectedEnvironmentsCycle: Cycle<ProtectedEnvironmentsScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.protectedEnvironments) return { kind: config.kind };
+    if (config.kind === "instance" || !config.protectedEnvironments) return { kind: config.kind };
     return { kind: config.kind, protectedEnvironments: config.protectedEnvironments };
   },
 

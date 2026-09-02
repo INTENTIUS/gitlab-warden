@@ -44,6 +44,7 @@ export const integrationsCycle: Cycle<IntegrationsScope> = {
     _scope: IntegrationsScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // groups/projects only
     const { base } = resourceFor(scopeId);
     charge(budget);
     const raw = await client.paginate<GlIntegration>(base);
@@ -55,7 +56,7 @@ export const integrationsCycle: Cycle<IntegrationsScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.integrations) return { kind: config.kind };
+    if (config.kind === "instance" || !config.integrations) return { kind: config.kind };
     return { kind: config.kind, integrations: config.integrations };
   },
 

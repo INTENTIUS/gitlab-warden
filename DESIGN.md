@@ -23,8 +23,9 @@ the operator never named).
 - Config is a map keyed by **full path** (URL-encoded when addressed):
   `acme/platform` (a group), `acme/platform/api` (a project).
 - Each declared node becomes a reconcile **scope** (chant's per-scope loop). The
-  scope id is the node's full path; the node "kind" (group vs project) selects which
-  endpoints a cycle uses.
+  scope id is kind-prefixed (`group:acme/platform`, `project:acme/platform/api`);
+  the node "kind" (group vs project vs instance) selects which endpoints a cycle
+  uses.
 - Selective-by-omission applies at two levels: which **nodes** are declared, and
   which **fields/collections** within a node are declared. Anything absent is never
   read for mutation, diffed, or changed.
@@ -34,8 +35,10 @@ the operator never named).
   numeric id where the API needs it (members, hooks, and approval rules carry
   numeric ids).
 - A renamed or transferred node (path no longer resolves) is treated as
-  **not-found**, producing a no-op plus a warning rather than a delete. warden
-  does not thrash on drift it didn't cause.
+  **not-found**: reads tolerate the 404 and yield no live state, so a path that
+  stopped resolving never turns into a delete. (Slices declared on such a node
+  still plan as creates; their apply fails visibly in `failed[]` rather than
+  silently retargeting.) warden does not thrash on drift it didn't cause.
 
 ## 2. Membership: direct vs inherited
 
@@ -49,8 +52,8 @@ GitLab exposes two member rosters per group/project:
 Three rules follow:
 
 1. Diff against `/members` (direct) only. Desired membership is reconciled
-   against the direct roster at that node. The `/members/all` roster may be read
-   for context/reporting but is **never** the diff baseline.
+   against the direct roster at that node. The `/members/all` roster is not
+   read at all — it is **never** the diff baseline.
 2. An inherited member is out of scope at a child node. It does not appear in
    `/members`, so it is never a create/update/delete candidate there. A
    `DELETE .../members/:user_id` on an inherited member **404s**, because the
@@ -90,8 +93,9 @@ referenced by id alongside a `base_access_level`.
 A direct member whose live `access_level` differs from desired is an **update**
 (`PUT .../members/:user_id`), not a delete+create. A child may *raise* an inherited
 level via a direct membership but **cannot set a lower level than inherited**: when
-config asks for a lower level than the inherited floor, the cycle detects the
-no-op and warns instead of looping on an error.
+config asks for a lower level than the inherited floor, GitLab rejects the write
+and the attempt surfaces in the cycle's `failed[]` output (visible every run)
+rather than silently converging.
 
 ### Removal semantics
 - Node-level removal means a `DELETE` of a **direct** member at that node only.

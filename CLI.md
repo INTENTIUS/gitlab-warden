@@ -57,7 +57,8 @@ Never pass the token on the command line; export it and name the variable via
   `Applied: N, Failed: M` per cycle with one `FAILED [type] key: error` line
   per failure (e.g. a 403 from a tier-gated endpoint).
 - **Guardrail**: `removalDeltaCap` refuses an apply whose deletes exceed 25%
-  of the pre-existing managed entries for a cycle. A tripped guardrail prints
+  of a cycle's planned pre-existing entries (updates + deletes; creates don't
+  dilute the fraction). A tripped guardrail prints
   `GUARDRAIL BLOCK: …`, skips that cycle's apply, and exits 1.
   `--allow-guardrail-override` applies anyway. (Deletes appear in a plan only
   for nodes whose policy declares `owned` — see [POLICY.md](POLICY.md); a node

@@ -89,6 +89,7 @@ export const pushRulesCycle: Cycle<PushRulesScope> = {
     _scope: PushRulesScope,
     budget: RateBudget,
   ): Promise<LiveNodeState> {
+    if (parseScope(scopeId).kind === "instance") return {}; // groups/projects only
     const { base } = resourceFor(scopeId);
     charge(budget);
     try {
@@ -103,7 +104,7 @@ export const pushRulesCycle: Cycle<PushRulesScope> = {
   },
 
   buildDesired(config: NodeConfig): NodeConfig {
-    if (!config.pushRules) return { kind: config.kind };
+    if (config.kind === "instance" || !config.pushRules) return { kind: config.kind };
     return { kind: config.kind, pushRules: config.pushRules };
   },
 

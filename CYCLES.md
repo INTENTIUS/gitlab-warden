@@ -10,9 +10,11 @@ nodes that don't declare its slice.
 Common behavior, so it isn't repeated 19 times:
 
 - **Endpoints** are REST (`/api/v4`) unless marked GraphQL.
-- Premium/Ultimate-gated reads that 403 are tolerated; the slice is treated
-  as unmanaged there and the run continues. A 403 on apply instead surfaces
-  in the per-cycle `failed[]` output with the API message.
+- Premium/Ultimate-gated reads that 403 are tolerated: the read yields no
+  live state and the run continues instead of erroring. (A slice you declared
+  anyway then plans as a create, and its apply surfaces the 403 in the
+  per-cycle `failed[]` output with the API message.) The GraphQL cycles extend
+  the same tolerance to a CE/FOSS schema that lacks the EE field entirely.
 - **Deletes** are ownership-gated (`isOwned`) at the diff layer. Ownership is
   declared per node in the policy: `owned: true` claims every collection the
   node's cycles reconcile, `owned: [member, …]` only the listed resource
@@ -42,7 +44,8 @@ no-op. Config lives in `memberRoles[]`, keyed by `name`.
 Framework definitions on top-level **group** nodes (Premium/Ultimate),
 declared in `complianceFrameworks[]` and matched by `name`. **GraphQL.**
 
-- Read: the `group.complianceFrameworks` query. 403 tolerated.
+- Read: the `group.complianceFrameworks` query. 403 tolerated, as is a
+  CE/FOSS schema without the field.
 - Apply: `createComplianceFramework` / `updateComplianceFramework` /
   `destroyComplianceFramework` mutations. Field drift (description, color,
   pipelineConfigurationFullPath) is an update.
@@ -57,7 +60,7 @@ Security-policy project linkage on **group** and **project** nodes
 slice. **GraphQL.**
 
 - The read asks for `securityPolicyProject { fullPath }` on the
-  group/project; a 403 is tolerated.
+  group/project, tolerating both a 403 and a schema that lacks the field.
 - Apply uses the `securityPolicyProjectAssign` and
   `securityPolicyProjectUnassign` mutations, where an empty or unset
   `policyProject` unlinks.
@@ -113,7 +116,10 @@ integration works without per-service code. Config comes from
   included); `DELETE …/integrations/:slug` disables.
 - `properties` are write-only (GitLab masks them), so property-only drift is
   not detected; presence and `active` are diffed, and properties are
-  re-applied on every create/update.
+  re-applied on every create/update. To disable an integration, remove its
+  entry (with `owned` covering `integration`) rather than setting
+  `active: false`: GitLab's PUT (re)activates, so only the DELETE path turns
+  one off.
 
 ## access-tokens
 
@@ -211,7 +217,10 @@ as the single `pushRules` object.
 
 - Read: `GET /{groups|projects}/:id/push_rule`; 404 (no rule yet) and 403
   (not Premium) both mean "unmanaged here".
-- Apply: `POST` when no rule exists, `PUT` on drift, `DELETE` on delete.
+- Apply: `POST` when no rule exists, `PUT` on drift. A delete is never
+  planned for this slice (removing `pushRules` from config makes it
+  unmanaged, not deleted); the apply path wires `DELETE …/push_rule` only for
+  library callers that construct such an entry themselves.
 - Premium-gated, with the usual read/apply 403 split described at the top.
 
 ## ci-variables
@@ -225,7 +234,10 @@ variables.
   filter.
 - Values are reconciled fully (variables are readable, unlike webhook
   tokens). A value omitted from config is sourced from `GITLAB_VAR_<KEY>` in
-  warden's environment; use that for values you'd rather not commit.
+  warden's environment — the env value is diffed and drift-corrected exactly
+  like a committed one; use that for values you'd rather not commit. With
+  neither config value nor env var, the value is not diffed at all (the entry
+  reconciles by presence, and a create writes an empty string).
 
 ## webhooks
 
