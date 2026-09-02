@@ -247,9 +247,11 @@ export interface WebhookConfig {
   /**
    * Former hook URL — an explicit rename intent, no `owned` needed: when a
    * live hook by the old URL exists (and none by the new URL), the plan is a
-   * single update that keeps the hook id. Ignored on `systemHooks` (the
-   * system-hooks API has no update endpoint, so delete + re-create is honest
-   * there).
+   * single update that keeps the hook id. Config errors (the same alias on
+   * two hooks, or an alias equal to another declared hook's URL) throw
+   * rather than guess — parity with node `previously:`. Ignored on
+   * `systemHooks` (the system-hooks API has no update endpoint, so
+   * delete + re-create is honest there).
    */
   previously?: string;
   pushEvents?: boolean;

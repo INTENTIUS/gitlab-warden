@@ -665,21 +665,34 @@ function diffWebhooksAs(
   if (resourceType === "system-hook") {
     desired = desired.map(({ previously: _previously, ...w }) => w);
   }
+  // Single-pass rename collection: validate every alias (config errors throw,
+  // live state notwithstanding — same parity as node `previously:` aliases),
+  // then decide per hook whether the rename is active. `renamed` maps the
+  // desired hook to the previous URL it adopts; `renamedFrom` is the set of
+  // live URLs adopted that way, excluded from the plain collection diff below.
   const liveByUrl = new Map(live.map((w) => [w.url, w]));
-  const renamedFrom = new Map<string, string>(); // previous URL → new URL
+  const renamed = new Map<WebhookConfig, string>(); // desired hook → previous URL
+  const renamedFrom = new Set<string>();
   if (resourceType === "webhook") {
+    const declaredUrls = new Set(desired.map((w) => w.url));
+    const seenAliases = new Set<string>();
     for (const dw of desired) {
-      if (typeof dw.previously === "string" && liveByUrl.has(dw.previously) && !liveByUrl.has(dw.url)) {
-        renamedFrom.set(dw.previously, dw.url);
+      const prev = dw.previously;
+      if (typeof prev !== "string" || prev === dw.url) continue;
+      if (declaredUrls.has(prev)) {
+        throw new Error(`webhook "${dw.url}": previously: "${prev}" is itself a declared hook URL`);
+      }
+      if (seenAliases.has(prev)) {
+        throw new Error(`webhook previously: "${prev}" is declared by more than one hook`);
+      }
+      seenAliases.add(prev);
+      if (liveByUrl.has(prev) && !liveByUrl.has(dw.url)) {
+        renamed.set(dw, prev);
+        renamedFrom.add(prev);
       }
     }
   }
-  for (const dw of desired) {
-    const prev =
-      typeof dw.previously === "string" && renamedFrom.get(dw.previously) === dw.url
-        ? dw.previously
-        : undefined;
-    if (prev === undefined) continue;
+  for (const [dw, prev] of renamed) {
     const lw = liveByUrl.get(prev)!;
     const fields = diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS);
     fields.push({ field: "key", before: prev, after: dw.url });
@@ -691,11 +704,7 @@ function diffWebhooksAs(
   // entry for the removal cap's denominator.
   return renamedFrom.size + diffCollection<WebhookConfig, LiveWebhook>({
     resourceType,
-    desired: new Map(
-      desired
-        .filter((w) => !(typeof w.previously === "string" && renamedFrom.get(w.previously) === w.url))
-        .map((w) => [w.url, w]),
-    ),
+    desired: new Map(desired.filter((w) => !renamed.has(w)).map((w) => [w.url, w])),
     live: new Map(live.filter((w) => !renamedFrom.has(w.url)).map((w) => [w.url, w])),
     compareFields: (dw, lw) =>
       diffFields(dw as unknown as Record<string, unknown>, lw as unknown as Record<string, unknown>, HOOK_FIELDS),

@@ -89,6 +89,25 @@ describe("webhook previously: rename", () => {
     expect(cs.entries[0]!.key).toBe("https://new");
   });
 
+  it("rejects the same previously: on two hooks (parity with node aliases)", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [
+        { url: "https://a", previously: "https://old" },
+        { url: "https://b", previously: "https://old" },
+      ],
+    };
+    expect(() => diff("group:acme", desired, { webhooks: [] })).toThrow(/more than one hook/);
+  });
+
+  it("rejects a previously: equal to another declared hook's URL", () => {
+    const desired: NodeConfig = {
+      kind: "group",
+      webhooks: [{ url: "https://kept" }, { url: "https://new", previously: "https://kept" }],
+    };
+    expect(() => diff("group:acme", desired, { webhooks: [] })).toThrow(/itself a declared hook URL/);
+  });
+
   it("an alias whose new URL is already live is inert (normal diff, old URL undeclared)", () => {
     const desired: NodeConfig = {
       kind: "group",
