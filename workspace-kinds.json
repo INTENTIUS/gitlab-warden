@@ -7,7 +7,8 @@
       "precedence": 200,
       "probe": { "anyFile": ["governance.yaml"] },
       "outputs": ["repos", "teams"],
-      "memberFile": { "path": "governance.yaml", "schema": "schemas/governance.schema.json" }
+      "memberFile": { "path": "governance.yaml", "schema": "schemas/governance.schema.json" },
+      "graph": { "reader": "dist/graph-reader.mjs", "config": { "dir": "{dir}", "file": "governance.yaml" } }
     }
   ]
 }
