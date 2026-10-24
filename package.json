@@ -20,8 +20,14 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist",
+    "schemas",
+    "workspace-kinds.json"
   ],
+  "exports": {
+    "./workspace-kinds": "./workspace-kinds.json",
+    "./package.json": "./package.json"
+  },
   "scripts": {
     "tsc": "tsc --noEmit",
     "lint:prose": "bash mkdocs-stage.sh && node scripts/lint-prose.mjs $(find docs -name '*.md')",
@@ -29,11 +35,13 @@
     "test:e2e:run": "vitest run --config vitest.e2e.config.ts",
     "e2e:up": "bash e2e/bootstrap.sh",
     "e2e:down": "docker compose -f e2e/docker-compose.yml down -v",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';import{fileURLToPath as __f2p}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__f2p(import.meta.url);const __dirname=__dn(__filename);\" --outfile=dist/cli.js && chmod +x dist/cli.js",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';import{fileURLToPath as __f2p}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__f2p(import.meta.url);const __dirname=__dn(__filename);\" --outfile=dist/cli.js && chmod +x dist/cli.js && npm run build:graph",
+    "build:graph": "esbuild src/graph/entry.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/graph-reader.mjs",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "ajv": "^8.20.0",
     "esbuild": "^0.28.0",
     "sentences": "^0.1.1",
     "typescript": "^5.9.3",

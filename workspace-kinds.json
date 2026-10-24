@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "kinds": [
+    {
+      "name": "forge-governance",
+      "description": "a directory holding a gitlab-warden governance policy (governance.yaml), which keeps GitLab groups and projects in declared state",
+      "precedence": 200,
+      "probe": { "anyFile": ["governance.yaml"] },
+      "outputs": ["repos", "teams"],
+      "memberFile": { "path": "governance.yaml", "schema": "schemas/governance.schema.json" },
+      "graph": { "reader": "dist/graph-reader.mjs", "config": { "dir": "{dir}", "file": "governance.yaml" } }
+    }
+  ]
+}
