@@ -1,0 +1,361 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://intentius.io/gitlab-warden/schemas/governance.schema.json",
+  "title": "gitlab-warden governance config",
+  "description": "The governance YAML gitlab-warden reconciles: declared nodes (groups, projects, the instance) keyed by full path. A node field warden does not know is refused, so a typo fails the check. Collections are checked for their shape and identity key; their remaining fields are left to warden.",
+  "type": "object",
+  "required": [
+    "nodes"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "nodes": {
+      "type": "object",
+      "description": "The nodes to manage, keyed by full path",
+      "additionalProperties": {
+        "$ref": "#/$defs/node"
+      }
+    }
+  },
+  "$defs": {
+    "visibility": {
+      "enum": [
+        "private",
+        "internal",
+        "public"
+      ]
+    },
+    "accessLevel": {
+      "oneOf": [
+        {
+          "enum": [
+            "no_access",
+            "minimal",
+            "guest",
+            "planner",
+            "reporter",
+            "developer",
+            "maintainer",
+            "owner"
+          ]
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "stringList": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "node": {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "group",
+            "project",
+            "instance"
+          ]
+        },
+        "previously": {
+          "type": "string"
+        },
+        "owned": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "$ref": "#/$defs/stringList"
+            }
+          ]
+        },
+        "groupSettings": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            },
+            "visibility": {
+              "$ref": "#/$defs/visibility"
+            },
+            "requestAccessEnabled": {
+              "type": "boolean"
+            },
+            "projectCreationLevel": {
+              "enum": [
+                "noone",
+                "maintainer",
+                "developer"
+              ]
+            },
+            "subgroupCreationLevel": {
+              "enum": [
+                "owner",
+                "maintainer"
+              ]
+            },
+            "preventForkingOutsideGroup": {
+              "type": "boolean"
+            },
+            "mentionsDisabled": {
+              "type": "boolean"
+            }
+          }
+        },
+        "projectSettings": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "visibility": {
+              "$ref": "#/$defs/visibility"
+            },
+            "defaultBranch": {
+              "type": "string"
+            },
+            "mergeMethod": {
+              "type": "string"
+            },
+            "squashOption": {
+              "enum": [
+                "never",
+                "always",
+                "default_on",
+                "default_off"
+              ]
+            },
+            "onlyAllowMergeIfPipelineSucceeds": {
+              "type": "boolean"
+            },
+            "onlyAllowMergeIfAllDiscussionsAreResolved": {
+              "type": "boolean"
+            },
+            "removeSourceBranchAfterMerge": {
+              "type": "boolean"
+            },
+            "topics": {
+              "$ref": "#/$defs/stringList"
+            }
+          }
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "user",
+              "accessLevel"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "user": {
+                "type": [
+                  "string",
+                  "integer"
+                ]
+              },
+              "accessLevel": {
+                "$ref": "#/$defs/accessLevel"
+              },
+              "memberRoleId": {
+                "type": "integer"
+              },
+              "expiresAt": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "protectedBranches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "protectedTags": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "protectedEnvironments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "deployKeys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "title",
+              "key"
+            ]
+          }
+        },
+        "deployTokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "accessTokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "pushRules": {
+          "type": "object"
+        },
+        "jobTokenScope": {
+          "type": "object"
+        },
+        "memberRoles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "baseAccessLevel"
+            ]
+          }
+        },
+        "complianceFrameworks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "securityPolicy": {
+          "type": "object"
+        },
+        "approvalRules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "approvalSettings": {
+          "type": "object"
+        },
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key"
+            ]
+          }
+        },
+        "pipelineSchedules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "description",
+              "cron",
+              "ref"
+            ]
+          }
+        },
+        "webhooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "url"
+            ]
+          }
+        },
+        "integrations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "baselines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "path"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "group",
+                  "project"
+                ]
+              },
+              "path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "instanceSettings": {
+          "type": "object"
+        },
+        "systemHooks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "url"
+            ]
+          }
+        },
+        "instanceVariables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key"
+            ]
+          }
+        }
+      }
+    }
+  }
+}
