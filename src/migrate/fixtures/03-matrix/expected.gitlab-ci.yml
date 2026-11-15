@@ -10,7 +10,9 @@ test:
   image: ubuntu:24.04
   parallel:
     matrix:
-      - OS: '[ubuntu, debian]'
+      - OS:
+          - ubuntu
+          - debian
         NODE:
           - 18
           - 20
