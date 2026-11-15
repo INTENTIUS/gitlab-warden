@@ -7,7 +7,8 @@ gitlab-warden reconcile --config governance.yml [flags]
 gitlab-warden migrate <path> [flags]
 ```
 
-`reconcile` is the governance loop this page documents; `migrate` translates
+`reconcile` is the governance loop this page documents; with `--plan-json` it
+also writes the plan as a chant change-set part. `migrate` translates
 GitHub Actions workflows into GitLab CI YAML and has its own page
 ([MIGRATE.md](MIGRATE.md), flags included). `gitlab-warden --help` (or no
 arguments, or `--help` after a subcommand) prints usage;
@@ -27,6 +28,8 @@ build time).
 | `--token-env <VAR>` | `GITLAB_TOKEN` | env var holding the API token; the run fails (exit 2) if it is unset or empty |
 | `--allow-guardrail-override` | off | apply even when a guardrail trips |
 | `--removal-cap-fraction <f>` | `0.25` | max deletable fraction of each resource type's live entries per apply; must be in `(0, 1]` or the parse fails with exit 2 |
+| `--plan-json <file>` | none | also write the plan to the file as a chant change-set part (see "Plan as a change-set part" below). Nothing is applied: combining it with `--mode apply` exits 2 |
+| `--member <name>` | the name of the policy file's directory | the workspace member the `--plan-json` part names. Giving it without `--plan-json` exits 2 |
 
 The command accepts flags only; a positional argument is an error. Every flag
 except `--allow-guardrail-override` takes a value.
@@ -109,6 +112,34 @@ on each cycle result's `origins` field when warden is used as a library
 (`import { loadGovernancePolicy } from "@intentius/gitlab-warden"`, then pass
 the loaded `provenance` to `runReconcile`).
 
+## Plan as a change-set part
+
+`--plan-json <file>` writes the run's plan as one part of a chant change-set
+document, so a governance member's planned changes can sit next to the rest of
+a workspace's plan. The file is the output of `reconcilePlanPart` from
+`@intentius/chant/change-set`, and chant reads it back with
+`readChangeSetPartFile(part, "warden", member, "gitlab")`.
+
+```sh
+gitlab-warden reconcile \
+  --config members/governance/governance.yml \
+  --plan-json governance.plan.json
+```
+
+The part's member is named by `--member`, or by the policy file's directory
+(`governance` above) when the flag is absent; without `--config`, that is the
+working directory's name, and a policy at the filesystem root needs
+`--member`. Its planner is `warden` and its lexicon `gitlab`. Each planned
+change is one entry with the address `<resourceType>.<key>` and the node's
+scope id (`group:acme/platform` or `project:acme/platform/api`) as its scope,
+and the member's `planDigest` covers every change set the run planned.
+
+When a cycle errors or the request budget defers one, the plan is incomplete:
+the member's status is `failed`, its `planDigest` is `null` and its `error`
+says which cycles are missing. The entries the other cycles planned stay in
+the part. Once the cycles have run, the file is written whatever the exit
+code.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -116,7 +147,7 @@ the loaded `provenance` to `runReconcile`).
 | 0 | Success: the plan printed (dry-run), or apply completed with no failures. |
 | 1 | Guardrail block: apply mode, at least one guardrail tripped, and `--allow-guardrail-override` was not set. For `migrate --strict`: error-severity findings remain. |
 | 2 | Argument or config error (unknown flag, unknown cycle, unreadable or invalid config, missing auth). |
-| 3 | Runtime error (API failure, an errored cycle, or failed apply entries). |
+| 3 | Runtime error (API failure, an errored cycle, failed apply entries, or a file that could not be written). |
 
 In CI, that means: a dry-run job fails only on real errors, and an apply job
 fails loudly on a guardrail trip (1) or partial application (3). See

@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { loadGovernanceConfig, loadGovernancePolicy, GovernanceConfigError } from "./load.js";
@@ -9,8 +9,16 @@ import { makeClient } from "../cycles/_testutil.js";
 
 const ex = (name: string) => resolve(import.meta.dirname, "..", "..", "examples", name);
 
-/** A scratch directory under the OS temp dir; the tests never delete it. */
-const scratch = (): string => mkdtempSync(join(tmpdir(), "gitlab-warden-load-"));
+/** Scratch directories under the OS temp dir, removed after each test. */
+const scratchDirs: string[] = [];
+const scratch = (): string => {
+  const dir = mkdtempSync(join(tmpdir(), "gitlab-warden-load-"));
+  scratchDirs.push(dir);
+  return dir;
+};
+afterEach(() => {
+  for (const dir of scratchDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 describe("loadGovernanceConfig", () => {
   it("a .ts policy folded, a .ts policy run, and the .yml load to the same object", async () => {
