@@ -151,8 +151,8 @@ as a member, so `chant workspace ls` and `chant workspace graph` list the policy
 The kind is data in `workspace-kinds.json`, exported at `@intentius/gitlab-warden/workspace-kinds`. chant reads it without
 importing the package.
 
-The kind needs chant `>= 0.124.49`: its `memberFile` arrived in `0.124.48` and its `graph.reader` in `0.124.49`, and an
-older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.json` against chant's
+The kind needs chant `>= 0.124.96`: its `memberFile` arrived in `0.124.48`, its `graph.reader` in `0.124.49` and its
+`drift.reader` in `0.124.96`, and an older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.json` against chant's
 `workspace-kinds.schema.json`, and the graph the reader draws for a sample policy against chant's graph schema.
 
 | Part | Value |

@@ -3,6 +3,11 @@
 Changes to `@intentius/gitlab-warden`. Versions follow semver, and releases
 up to `0.6.1` are not recorded here.
 
+## Unreleased
+
+- README: the kind needs chant `0.124.96` or newer, not `0.124.49`. The kinds
+  file's `drift` block is unknown to older chant, which drops the kind.
+
 ## 0.7.0 (2026-11-14)
 
 - The package ships a `forge-governance` member kind for chant workspaces in
