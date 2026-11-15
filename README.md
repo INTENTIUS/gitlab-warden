@@ -187,6 +187,10 @@ budget skipped a `not-observed` record with reason `not-reached`, so an incomple
 `--read` other than `plan` and `--stack` are refused with `read-unsupported`, and `--resource` with
 `resource-unsupported`, since a reconcile plans whole groups and projects.
 
+`gitlab-warden reconcile --drift-issue` builds the same records from a scheduled dry run and keeps one GitLab issue
+open while they show drift, closing it once GitLab matches the policy. See [CLI.md](CLI.md#drift-issue) and
+[CI.md](CI.md).
+
 ## Tests
 
 `npm test` runs the unit suite (mock-client, fully offline). The

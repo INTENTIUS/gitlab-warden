@@ -44,6 +44,23 @@ describe("parseReconcileArgs", () => {
     bad(["--plan-json", "plan.json", "--member", ""]);
   });
 
+  it("parses --drift-issue and --drift-issue-repo, dry-run only, and lets --member name the issue's member", () => {
+    expect(parseReconcileArgs([])).toMatchObject({ driftIssue: false, driftIssueRepo: undefined });
+    expect(parseReconcileArgs(["--drift-issue"])).toMatchObject({ driftIssue: true, driftIssueRepo: undefined });
+    expect(parseReconcileArgs(["--drift-issue", "--drift-issue-repo", "acme/governance", "--member", "gov"])).toMatchObject({
+      driftIssue: true,
+      driftIssueRepo: "acme/governance",
+      member: "gov",
+    });
+    const bad = (argv: string[], msg: RegExp) => expect(() => parseReconcileArgs(argv)).toThrow(expect.objectContaining({ code: 2, message: expect.stringMatching(msg) }));
+    bad(["--mode", "apply", "--drift-issue"], /cannot be combined with --mode apply/);
+    bad(["--drift-issue-repo", "acme/governance"], /give it with --drift-issue/);
+    bad(["--drift-issue", "--drift-issue-repo"], /requires a value/);
+    bad(["--drift-issue", "--drift-issue-repo", "governance"], /full path \(group\/project\) or id/);
+    bad(["--drift-issue", "--cycles", "members"], /cannot be combined with --cycles/);
+    bad(["--member", "gov"], /give it with --plan-json or --drift-issue/);
+  });
+
   it("rejects an unknown flag, bad mode, and missing value", () => {
     expect(() => parseReconcileArgs(["--config", "g", "--nope"])).toThrow(/unknown flag/);
     expect(() => parseReconcileArgs(["--config", "g", "--mode", "yolo"])).toThrow(/--mode must be/);

@@ -32,7 +32,9 @@ build time).
 | `--allow-guardrail-override` | off | apply even when a guardrail trips |
 | `--removal-cap-fraction <f>` | `0.25` | max deletable fraction of each resource type's live entries per apply; must be in `(0, 1]` or the parse fails with exit 2 |
 | `--plan-json <file>` | none | also write the plan to the file as a chant change-set part (see "Plan as a change-set part" below). Nothing is applied: combining it with `--mode apply` exits 2 |
-| `--member <name>` | the name of the policy file's directory | the workspace member the `--plan-json` part names. Giving it without `--plan-json` exits 2 |
+| `--member <name>` | the name of the policy file's directory | the workspace member the `--plan-json` part and the `--drift-issue` records name. Giving it without either flag exits 2 |
+| `--drift-issue` | off | keep one GitLab issue tracking the drift this dry run finds (see "Drift issue" below). Combining it with `--mode apply` or with `--cycles` exits 2 |
+| `--drift-issue-repo <path>` | `CI_PROJECT_PATH` | the project the drift issue lives in, as a full path (`group/project`, subgroups allowed) or a numeric id. Giving it without `--drift-issue` exits 2 |
 
 The command accepts flags only; a positional argument is an error. Every flag
 except `--allow-guardrail-override` takes a value.
@@ -142,6 +144,41 @@ the member's status is `failed`, its `planDigest` is `null` and its `error`
 says which cycles are missing. The entries the other cycles planned stay in
 the part. Once the cycles have run, the file is written whatever the exit
 code.
+
+## Drift issue
+
+`--drift-issue` turns a dry run's plan into one GitLab issue that tracks the
+drift, through `keepDriftIssue` from `@intentius/chant/drift-issue`. A run
+that finds drift opens the issue, or updates the open one when the drift
+changed; a run with the same drift leaves it as it is, so a scheduled job
+never opens a second issue; a run that finds none closes it with a comment.
+A run where a cycle errored or was deferred proves nothing, so it leaves an
+open issue alone. An issue closed by hand stays closed, and the next drift
+opens a new one.
+
+```sh
+gitlab-warden reconcile --drift-issue --drift-issue-repo acme/governance
+```
+
+The issue lives in the project `--drift-issue-repo` names, else in
+`CI_PROJECT_PATH`, the project the pipeline runs in; with neither the run
+exits 2 before any cycle runs. It is on the instance the warden governs and
+is written with the warden's own token (`--token-env`), which needs the `api`
+scope on that project. The records are the drift reader's (see "Drift for
+chant workspaces" below), so the issue lists the same addresses
+`chant workspace drift` reports. A declared item GitLab lacks (`pending`), a
+changed one (`drifted`) and an owned one the policy does not declare
+(`undeclared`) all count as drift. The issue's title is
+`Governance drift on <host>/<top-level paths>`, for example
+`Governance drift on gitlab.com/acme`, and a hidden marker with the same name
+finds it again. The pipeline's `CI_PIPELINE_URL` is linked from the body.
+
+The issue is kept after the plans print and before the exit code is decided,
+also on a run whose cycles errored. The job log gets one line such as
+`Drift issue: opened #4 https://gitlab.com/acme/governance/-/issues/4`. A
+GitLab error while keeping the issue prints
+`gitlab-warden: error: keeping the drift issue failed: <message>` and exits
+3. A dry run with drift still exits 0, as without the flag.
 
 ## Drift for chant workspaces
 
