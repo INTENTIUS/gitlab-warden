@@ -14,7 +14,7 @@ up to `0.6.1` are not recorded here.
   [README.md](README.md#as-a-chant-workspace-member). The kind needs chant
   0.124.49 or later.
 - The `@intentius/chant`, `@intentius/chant-lexicon-gitlab` and
-  `@intentius/chant-lexicon-github` range moves from `^0.72.1` to `^0.124.95`.
+  `@intentius/chant-lexicon-github` range moves from `^0.72.1` to `^0.124.96`.
   `migrate` now turns a GitHub matrix flow sequence such as `[ubuntu, debian]`
   into a list in `parallel.matrix` instead of a quoted string.
 - Node 24 or later is required (`engines.node` is `>=24`).
