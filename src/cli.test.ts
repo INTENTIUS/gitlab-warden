@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { parseReconcileArgs, CliError } from "./cli.js";
 
 describe("parseReconcileArgs", () => {
-  it("requires --config", () => {
-    expect(() => parseReconcileArgs([])).toThrow(CliError);
-    expect(() => parseReconcileArgs([])).toThrow(/--config is required/);
+  it("leaves --config unset when it is not given (governance.yml is the default)", () => {
+    expect(parseReconcileArgs([]).config).toBeUndefined();
   });
 
   it("defaults mode to dry-run and token env to GITLAB_TOKEN", () => {

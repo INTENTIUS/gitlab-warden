@@ -64,7 +64,7 @@ Write a minimal policy that declares one group and one project with one
 slice each (the full schema is in the [policy reference](POLICY.md)):
 
 ```yaml
-# governance.yaml
+# governance.yml
 nodes:
   acme/platform:
     kind: group
@@ -81,7 +81,7 @@ nodes:
 Run the reconcile against it:
 
 ```sh
-npx @intentius/gitlab-warden reconcile --config governance.yaml
+npx @intentius/gitlab-warden reconcile --config governance.yml
 ```
 
 Dry-run is the default mode: it reads live state and prints one plan section
@@ -122,7 +122,7 @@ Point warden at it and do whatever you like, because this stack is all yours:
 
 ```sh
 npx @intentius/gitlab-warden reconcile \
-  --config governance.yaml \
+  --config governance.yml \
   --mode apply \
   --base-url-env GITLAB_E2E_URL \
   --token-env GITLAB_E2E_TOKEN
