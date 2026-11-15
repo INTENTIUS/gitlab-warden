@@ -169,23 +169,31 @@ misspelled field fails `chant workspace check` before a reconcile silently leave
 ### Drift in a chant workspace
 
 `chant workspace drift --member <name>` reads a governance member through the kind's drift reader, which needs chant
-`>= 0.124.96` (`KIND_DRIFT_READER_FLOOR`); an older chant can't read the kinds file's `drift` block. The reader runs
-every cycle as a dry-run reconcile against GitLab, so it reads and never writes, and returns chant's drift stream for
-the `plan` read. It runs inside chant's process and takes its credentials from the environment: the token from
-`GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`. Without a token the read is
-refused with `no-drift-read`. A member with no policy, or an invalid one, fails the read.
+`>= 0.124.96` (`KIND_DRIFT_READER_FLOOR`); an older chant can't read the kinds file's `drift` block. The reader loads
+the member's `governance.yml` (then `governance.yaml` with a deprecation note, then `governance.ts`), runs every cycle
+as a dry-run reconcile against GitLab, so it reads and never writes, and answers with chant's drift stream, engine
+`warden`, read `live-read`. It runs inside chant's process and takes its credentials from the environment: the token
+from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`.
 
-Each planned change is one record. A create is `pending` (declared, absent on GitLab), an update is `drifted` with
-each changed field as an attribute (declared value before, live value after), and a delete, planned only for an owned
-collection, is `undeclared`. Variables, hooks, integrations, deploy keys and tokens keep the field names and never the
-values. The address is the declared path, and the graph's node id where the graph draws one, so chant places the
-record on that node: group settings are `team/<group>`, project settings `repo/<project>`, a protected branch
-`protection/<project>/<branch>` and an integration `app/<path>/<name>`. Other changes are
-`<resourceType>/<path>/<key>`, such as `member/acme/platform/alice`. A policy GitLab matches gives no records. A cycle
-that errors gives a `not-observed` record at `cycle/<path>/<cycle>` with reason `read-failed`, and one the request
-budget skipped a `not-observed` record with reason `not-reached`, so an incomplete read never reads as no drift.
-`--read` other than `plan` and `--stack` are refused with `read-unsupported`, and `--resource` with
-`resource-unsupported`, since a reconcile plans whole groups and projects.
+There is one record per node the policy declares, at the graph reader's node id (`team/<group>`, `repo/<project>`,
+`protection/<project>/<branch>`, `app/<path>/<integration>`), so chant colours the member's graph; an instance node,
+which the graph does not draw, is `instance/<path>`. A node with no planned change under it is `in-sync`. A node with
+planned changes is `drifted`, each change one attribute: an update gives `<type>[#<key>].<field>` with `before` the
+declared value and `after` GitLab's, a create `<type>[#<key>]` with the declared value, a delete `<type>[#<key>]` with
+the live one (`group-settings.<field>`, `project-settings.<field>` and the like for a node's own settings). Members,
+variables, hooks, push rules and the other per-node settings count under their group, project or instance; a protected
+branch and an integration are nodes of their own. A change under a node the graph does not draw (an owned protected
+branch the policy does not declare) is a `drifted` record of its own. Variables, hooks, integrations, deploy keys and
+tokens carry no values (`sensitive: true`).
+
+A cycle that fails leaves its node's records `not-observed` with reason `read-failed` (or `drifted` with the failure
+noted, where another cycle found drift), and a cycle the request budget skipped leaves every record `not-observed`
+with reason `not-reached`, so a read that did not finish never reads as clean.
+
+Without a token, or with no policy in the member, the read is refused with `no-drift-read` and GitLab is not called. A
+policy that does not load fails the read. `--resource <node id>` reads one declared node (its group or project is
+reconciled alone); an undeclared one is refused with `no-drift-read`. `--read` other than `live-read`, and `--stack`,
+are refused with `read-unsupported`.
 
 `gitlab-warden reconcile --drift-issue` builds the same records from a scheduled dry run and keeps one GitLab issue
 open while they show drift, closing it once GitLab matches the policy. See [CLI.md](CLI.md#drift-issue) and

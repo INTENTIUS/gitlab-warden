@@ -28,7 +28,7 @@ stages: [governance]
 
 .warden:
   stage: governance
-  image: node:22
+  image: node:24
   variables:
     GIT_DEPTH: "1"
 
@@ -119,7 +119,7 @@ artifacts for review.
 ```yaml
 migrate:translate:
   stage: governance
-  image: node:22
+  image: node:24
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes: [".github/workflows/*"]

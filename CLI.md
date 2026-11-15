@@ -166,9 +166,9 @@ exits 2 before any cycle runs. It is on the instance the warden governs and
 is written with the warden's own token (`--token-env`), which needs the `api`
 scope on that project. The records are the drift reader's (see "Drift for
 chant workspaces" below), so the issue lists the same addresses
-`chant workspace drift` reports. A declared item GitLab lacks (`pending`), a
-changed one (`drifted`) and an owned one the policy does not declare
-(`undeclared`) all count as drift. The issue's title is
+`chant workspace drift` reports: each node with planned changes is `drifted`,
+whether a declared item is missing on GitLab, differs, or is an owned one the
+policy does not declare. The issue's title is
 `Governance drift on <host>/<top-level paths>`, for example
 `Governance drift on gitlab.com/acme`, and a hidden marker with the same name
 finds it again. The pipeline's `CI_PIPELINE_URL` is linked from the body.
@@ -188,9 +188,10 @@ The drift reader `chant workspace drift --member <name>` runs for a
 (chant 0.124.96 or later). It reads the member's `governance.yml` and runs
 the same plan `reconcile --mode dry-run` prints, with every cycle, the token
 from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL` (default
-`https://gitlab.com`). It never applies. Each planned change is one drift
-record; [README.md](README.md#drift-in-a-chant-workspace) lists the
-addresses and statuses.
+`https://gitlab.com`). It never applies. There is one record per declared
+node, read `live-read`: `in-sync`, or `drifted` with each planned change under
+the node as an attribute; [README.md](README.md#drift-in-a-chant-workspace)
+lists the addresses and statuses.
 
 ## repos
 

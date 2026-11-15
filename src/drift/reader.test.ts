@@ -2,8 +2,8 @@
  * The forge-governance drift reader (INTENTIUS/gitlab-warden#74): what it
  * returns passes chant's drift-reader schema and chant's own check
  * (`checkDriftReaderOutput`, which runs every line through `decodeDriftLine`),
- * reports drift for a policy GitLab does not match and none for one it does,
- * and never writes. The GitLab client is mocked the way the cycle tests do it.
+ * gives one record per declared node (in-sync or drifted, each planned change
+ * an attribute) and never writes. The GitLab client is mocked the way the cycle tests do it.
  */
 
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -21,7 +21,8 @@ import { ciVariablesCycle } from "../cycles/ci-variables.js";
 import { groupSettingsCycle } from "../cycles/group-settings.js";
 import { makeClient, type MockClient } from "../cycles/_testutil.js";
 import { readGovernance } from "../graph/reader.js";
-import { driftAddress, readGovernanceDrift, type ReadGovernanceDriftDeps } from "./reader.js";
+import { declaredNodes, driftAddress, driftAttributes, governanceDrift, readGovernanceDrift, type ReadGovernanceDriftDeps } from "./reader.js";
+import type { GovernanceConfig } from "../config/types.js";
 import read from "./entry.js";
 
 const require = createRequire(import.meta.url);
@@ -107,51 +108,165 @@ const member = (file = "governance.yml", text = POLICY): string => {
 };
 const input = (d: string, extra: Partial<DriftReaderInput> = {}): DriftReaderInput => ({
   dir: d,
-  config: { dir: d, file: "governance.yml", tokenEnv: "GITLAB_TOKEN", baseUrlEnv: "GITLAB_BASE_URL" },
+  config: { dir: d, file: "governance.yml" },
   member: "governance",
   observedAt: AT,
   ...extra,
 });
 const deps = (client: MockClient, extra: ReadGovernanceDriftDeps = {}): ReadGovernanceDriftDeps => ({ env: { GITLAB_TOKEN: "t0ken" }, createClient: () => client, cycles, ...extra });
 
+const NODES = ["team/acme/platform", "repo/acme/platform/api", "protection/acme/platform/api/main"];
+/** The same nodes in the order the settled stream lists records: by address. */
+const SETTLED = [...NODES].sort();
+
+describe("driftAttributes", () => {
+  it("an update gives one attribute per field, declared before and live after", () => {
+    expect(driftAttributes({ kind: "update", resourceType: "member", key: "alice", fields: [{ field: "accessLevel", before: 30, after: 40 }] })).toEqual([
+      { path: "member[#alice].accessLevel", before: 40, after: 30 },
+    ]);
+    expect(driftAttributes({ kind: "update", resourceType: "group-settings", key: "group-settings", fields: [{ field: "visibility", before: "public", after: "private" }] })).toEqual([
+      { path: "group-settings.visibility", before: "private", after: "public" },
+    ]);
+  });
+
+  it("a create carries the declared value, a delete the live one", () => {
+    expect(driftAttributes({ kind: "create", resourceType: "member", key: "carol", after: { user: "carol" } })).toEqual([{ path: "member[#carol]", before: { user: "carol" } }]);
+    expect(driftAttributes({ kind: "delete", resourceType: "member", key: "bob", before: { user: "bob" } })).toEqual([{ path: "member[#bob]", after: { user: "bob" } }]);
+  });
+
+  it("a type whose values can hold a secret carries none", () => {
+    expect(driftAttributes({ kind: "update", resourceType: "variable", key: "DEPLOY_KEY@*", fields: [{ field: "value", before: "a", after: "b" }] })).toEqual([
+      { path: "variable[#DEPLOY_KEY@*].value", sensitive: true },
+    ]);
+    expect(driftAttributes({ kind: "create", resourceType: "webhook", key: "https://x", after: { url: "https://x", token: "t" } })).toEqual([{ path: "webhook[#https://x]", sensitive: true }]);
+  });
+});
+
+describe("declaredNodes and driftAddress", () => {
+  const doc = `
+nodes:
+  acme/platform: { kind: group, integrations: [{ name: slack }] }
+  acme/platform/api: { kind: project, protectedBranches: [{ name: release/* }] }
+  gitlab.example.com: { kind: instance }
+`;
+  const policy = parse(doc) as GovernanceConfig;
+
+  it("are the graph reader's node ids, without its namespace nodes, then the instance nodes", () => {
+    const graph = readGovernance(policy).nodes.map((n) => n.id);
+    expect(declaredNodes(policy)).toEqual([
+      { address: "team/acme/platform", path: "acme/platform" },
+      { address: "app/acme/platform/slack", path: "acme/platform" },
+      { address: "repo/acme/platform/api", path: "acme/platform/api" },
+      { address: "protection/acme/platform/api/release/*", path: "acme/platform/api" },
+      { address: "instance/gitlab.example.com", path: "gitlab.example.com" },
+    ]);
+    for (const n of declaredNodes(policy).slice(0, 4)) expect(graph).toContain(n.address);
+  });
+
+  it("puts a change on its node, or on the protected branch or integration it names", () => {
+    expect(driftAddress("group", "acme/platform", { resourceType: "group-settings", key: "group-settings" })).toBe("team/acme/platform");
+    expect(driftAddress("group", "acme/platform", { resourceType: "member", key: "alice" })).toBe("team/acme/platform");
+    expect(driftAddress("group", "acme/platform", { resourceType: "integration", key: "slack" })).toBe("app/acme/platform/slack");
+    expect(driftAddress("project", "acme/platform/api", { resourceType: "push-rules", key: "push-rules" })).toBe("repo/acme/platform/api");
+    expect(driftAddress("project", "acme/platform/api", { resourceType: "protected-branch", key: "main" })).toBe("protection/acme/platform/api/main");
+    expect(driftAddress("instance", "gitlab.example.com", { resourceType: "system-hook", key: "https://x" })).toBe("instance/gitlab.example.com");
+  });
+});
+
+describe("governanceDrift", () => {
+  const policy = parse(POLICY) as GovernanceConfig;
+  const update = { kind: "update" as const, resourceType: "member", key: "alice", fields: [{ field: "accessLevel", before: 30, after: 40 }] };
+
+  it("names every declared node, in-sync unless a planned change falls under it", () => {
+    const { start, records } = governanceDrift({ member: "governance", observedAt: AT, policy, changeSets: [{ org: "group:acme/platform", entries: [update] }] });
+    expect(start.expected).toEqual(NODES);
+    expect(records.map((r) => [r.address, r.status, r.attributes?.map((a) => a.path)])).toEqual([
+      ["team/acme/platform", "drifted", ["member[#alice].accessLevel"]],
+      ["repo/acme/platform/api", "in-sync", undefined],
+      ["protection/acme/platform/api/main", "in-sync", undefined],
+    ]);
+  });
+
+  it("a cycle that errored leaves its node's records not-observed, or drifted with attributesUnobserved where others found drift", () => {
+    const { records } = governanceDrift({
+      member: "governance",
+      observedAt: AT,
+      policy,
+      changeSets: [{ org: "project:acme/platform/api", entries: [{ kind: "update", resourceType: "project-settings", key: "project-settings", fields: [{ field: "visibility", before: "public", after: "private" }] }] }],
+      errored: [{ name: "protected-branches", org: "project:acme/platform/api", stage: "fetchLive", error: "GET protected_branches returned 500" }],
+    });
+    const why = { reason: "read-failed", detail: "protected-branches errored in fetchLive: GET protected_branches returned 500" };
+    expect(records.map((r) => [r.address, r.status])).toEqual([
+      ["team/acme/platform", "in-sync"],
+      ["repo/acme/platform/api", "drifted"],
+      ["protection/acme/platform/api/main", "not-observed"],
+    ]);
+    expect(records[1].attributesUnobserved).toEqual(why);
+    expect(records[2].unobserved).toEqual(why);
+  });
+
+  it("a deferred cycle leaves every node not-observed", () => {
+    const { records } = governanceDrift({ member: "governance", observedAt: AT, policy, changeSets: [], deferred: { skippedCycles: ["members@group:acme/platform"], skippedEntries: [] } });
+    expect(new Set(records.map((r) => r.status))).toEqual(new Set(["not-observed"]));
+    expect(records[0].unobserved).toEqual({ reason: "not-reached", detail: "deferred by the request budget: members@group:acme/platform" });
+  });
+
+  it("a change under a node the graph does not draw is a record of its own", () => {
+    const { records } = governanceDrift({
+      member: "governance",
+      observedAt: AT,
+      policy,
+      changeSets: [{ org: "project:acme/platform/api", entries: [{ kind: "delete", resourceType: "protected-branch", key: "legacy", before: { name: "legacy" } }] }],
+    });
+    expect(records.at(-1)).toMatchObject({ address: "protection/acme/platform/api/legacy", status: "drifted", node: null, attributes: [{ path: "protected-branch[#legacy]", after: { name: "legacy" } }] });
+  });
+
+  it("puts a pending rename's changes on the node's declared path", () => {
+    const renamed = parse(`nodes:\n  acme/new-name: { kind: group, previously: acme/old-name }\n`) as GovernanceConfig;
+    const { records } = governanceDrift({
+      member: "governance",
+      observedAt: AT,
+      policy: renamed,
+      changeSets: [{ org: "group:acme/old-name", entries: [{ kind: "update", resourceType: "node", key: "acme/new-name", fields: [{ field: "path", before: "acme/old-name", after: "acme/new-name" }] }] }],
+    });
+    expect(records).toEqual([expect.objectContaining({ address: "team/acme/new-name", status: "drifted", attributes: [{ path: "node[#acme/new-name].path", before: "acme/new-name", after: "acme/old-name" }] })]);
+  });
+});
+
 describe("readGovernanceDrift", () => {
-  it("reports no drift, start and settle with zero counts, when GitLab matches the policy", async () => {
+  it("reports every declared node in-sync when GitLab matches the policy", async () => {
     const out = await readGovernanceDrift(input(member()), deps(matching()));
     expectValid(out);
     const ls = lines(out);
-    expect(ls).toHaveLength(2);
-    expect(ls[0]).toMatchObject({ type: "drift-start", member: "governance", engine: "warden", read: "plan", at: AT, expected: [] });
-    expect(ls[1]).toMatchObject({ type: "drift-settle", counts: { drifted: 0, pending: 0, undeclared: 0, "not-observed": 0 } });
+    expect(ls[0]).toMatchObject({ type: "drift-start", member: "governance", engine: "warden", read: "live-read", at: AT, expected: NODES });
+    expect(records(out).map((r) => [r.address, r.status])).toEqual(SETTLED.map((a) => [a, "in-sync"]));
+    expect(ls.at(-1)).toMatchObject({ type: "drift-settle", counts: { "in-sync": 3, drifted: 0, pending: 0, undeclared: 0, "not-observed": 0 } });
   });
 
-  it("gives one record per planned change, addressed by the graph's node ids where it draws one", async () => {
+  it("gives each node with planned changes a drifted record, one attribute per change", async () => {
     const out = await readGovernanceDrift(input(member()), deps(drifted()));
     expectValid(out);
     const r = byAddress(out);
-    expect(Object.keys(r).sort()).toEqual([
-      "member/acme/platform/alice",
-      "member/acme/platform/bob",
-      "member/acme/platform/carol",
-      "protection/acme/platform/api/main",
-      "team/acme/platform",
-      "variable/acme/platform/api/DEPLOY_KEY@*",
-    ]);
+    expect(Object.keys(r)).toEqual(SETTLED);
     expect(r["team/acme/platform"]).toMatchObject({
       status: "drifted",
       node: null,
-      resourceType: "group-settings",
-      attributes: [{ path: "visibility", before: "private", after: "public" }],
-      evidence: { tool: "gitlab-warden", command: "reconcile --mode dry-run", engineCode: "update" },
+      evidence: { tool: "gitlab-warden", command: "reconcile --mode dry-run" },
     });
-    expect(r["member/acme/platform/alice"]).toMatchObject({ status: "drifted", attributes: [{ path: "accessLevel", before: 40, after: 30 }] });
-    expect(r["member/acme/platform/carol"]).toMatchObject({ status: "pending", evidence: { engineCode: "create" } });
-    expect(r["member/acme/platform/carol"]).not.toHaveProperty("attributes");
-    expect(r["member/acme/platform/bob"]).toMatchObject({ status: "undeclared", evidence: { engineCode: "delete" } });
-    expect(r["protection/acme/platform/api/main"]).toMatchObject({ status: "drifted", attributes: [{ path: "pushAccessLevel", before: 40, after: 30 }] });
+    expect(r["team/acme/platform"]).not.toHaveProperty("resourceType");
+    expect(r["team/acme/platform"].attributes).toEqual(
+      expect.arrayContaining([
+        { path: "group-settings.visibility", before: "private", after: "public" },
+        { path: "member[#alice].accessLevel", before: 40, after: 30 },
+        expect.objectContaining({ path: "member[#carol]", before: expect.anything() }),
+        expect.objectContaining({ path: "member[#bob]", after: expect.anything() }),
+      ]),
+    );
+    expect(r["protection/acme/platform/api/main"]).toMatchObject({ status: "drifted", attributes: [{ path: "protected-branch[#main].pushAccessLevel", before: 40, after: 30 }] });
     // A variable's value is never carried.
-    expect(r["variable/acme/platform/api/DEPLOY_KEY@*"]).toMatchObject({ status: "drifted", attributes: [{ path: "value", sensitive: true }] });
+    expect(r["repo/acme/platform/api"]).toMatchObject({ status: "drifted", attributes: [{ path: "variable[#DEPLOY_KEY@*].value", sensitive: true }] });
     expect(JSON.stringify(out)).not.toContain("s3cret");
-    expect(lines(out).at(-1)).toMatchObject({ type: "drift-settle", counts: { drifted: 4, pending: 1, undeclared: 1 } });
+    expect(lines(out).at(-1)).toMatchObject({ type: "drift-settle", counts: { drifted: 3, "in-sync": 0 } });
   });
 
   it("reads with GET only: a drift read never writes", async () => {
@@ -161,7 +276,7 @@ describe("readGovernanceDrift", () => {
     expect(client.calls.filter((c) => c.method !== "GET" && c.method !== "PAGINATE" && c.method !== "GRAPHQL")).toEqual([]);
   });
 
-  it("gives a cycle that errored a not-observed record, so the read never settles clean", async () => {
+  it("a cycle that errored leaves its node not-observed, so the read never settles clean", async () => {
     const client = matching();
     const inner = client.paginate.bind(client);
     client.paginate = async <T,>(path: string): Promise<T[]> => {
@@ -170,43 +285,33 @@ describe("readGovernanceDrift", () => {
     };
     const out = await readGovernanceDrift(input(member()), deps(client));
     expectValid(out);
-    expect(records(out)).toEqual([
-      expect.objectContaining({
-        address: "cycle/acme/platform/api/protected-branches",
-        status: "not-observed",
-        unobserved: { reason: "read-failed", detail: "fetchLive: GET protected_branches returned 500" },
-      }),
+    expect(records(out).map((r) => [r.address, r.status])).toEqual([
+      ["protection/acme/platform/api/main", "not-observed"],
+      ["repo/acme/platform/api", "not-observed"],
+      ["team/acme/platform", "in-sync"],
     ]);
+    expect(records(out)[1].unobserved).toEqual({ reason: "read-failed", detail: "protected-branches errored in fetchLive: GET protected_branches returned 500" });
   });
 
-  it("gives a cycle the request budget deferred a not-observed record", async () => {
+  it("a cycle the request budget deferred leaves every node not-observed", async () => {
     const out = await readGovernanceDrift(input(member()), deps(matching(), { requestBudget: 1 }));
     expectValid(out);
-    const deferred = records(out).filter((r) => r.unobserved?.reason === "not-reached");
-    expect(deferred.length).toBeGreaterThan(0);
-    expect(deferred[0].address).toMatch(/^cycle\/[a-z-]+@(group|project):/);
+    expect(new Set(records(out).map((r) => r.status))).toEqual(new Set(["not-observed"]));
+    expect(records(out)[0].unobserved?.detail).toMatch(/^deferred by the request budget: [a-z-]+@(group|project):/);
   });
 
-  it("places group settings, protected branches and integrations on the graph reader's nodes", () => {
-    const graph = new Set(
-      readGovernance(
-        parse(`
-nodes:
-  acme/platform: { kind: group, integrations: [{ name: slack }] }
-  acme/platform/api: { kind: project, protectedBranches: [{ name: main }] }
-`),
-      ).nodes.map((n) => n.id),
-    );
-    for (const [path, resourceType, key] of [
-      ["acme/platform", "group-settings", "group-settings"],
-      ["acme/platform", "integration", "slack"],
-      ["acme/platform/api", "project-settings", "project-settings"],
-      ["acme/platform/api", "protected-branch", "main"],
-    ]) {
-      expect(graph.has(driftAddress(path, { resourceType, key }))).toBe(true);
-    }
-    expect(driftAddress("acme/platform", { resourceType: "push-rules", key: "push-rules" })).toBe("push-rules/acme/platform");
-    expect(driftAddress("acme/new-name", { resourceType: "node", key: "acme/new-name" })).toBe("node/acme/new-name");
+  it("reads one declared node alone with --resource, and refuses an undeclared one", async () => {
+    const d = member();
+    const client = drifted();
+    const out = await readGovernanceDrift(input(d, { resource: "repo/acme/platform/api" }), deps(client));
+    expectValid(out);
+    expect(lines(out)[0]).toMatchObject({ type: "drift-start", resource: "repo/acme/platform/api", expected: ["repo/acme/platform/api"] });
+    expect(records(out).map((r) => [r.address, r.status])).toEqual([["repo/acme/platform/api", "drifted"]]);
+    // Only the project was reconciled.
+    expect(client.calls.some((c) => c.path.startsWith("/groups/"))).toBe(false);
+    const refused = await readGovernanceDrift(input(d, { resource: "repo/acme/nope" }), deps(drifted()));
+    expectValid(refused);
+    expect(refused).toEqual({ refused: { code: "no-drift-read", message: "governance's policy declares no repo/acme/nope" } });
   });
 
   it("refuses without throwing when the token is missing", async () => {
@@ -220,39 +325,46 @@ nodes:
     expect(out).toEqual({ refused: { code: "no-drift-read", message: "GITLAB_TOKEN is not set; gitlab-warden reads its GitLab API token from it to read governance's drift" } });
   });
 
-  it("takes the instance from GITLAB_BASE_URL, else gitlab.com", async () => {
-    const seen: string[] = [];
+  it("takes the instance from GITLAB_BASE_URL, else gitlab.com, and the variables the kind's config names", async () => {
+    const seen: Array<{ baseUrl: string; token: string }> = [];
     const d = member();
     const capture = (env: NodeJS.ProcessEnv): ReadGovernanceDriftDeps => ({
       env,
       cycles,
       createClient: (o) => {
-        seen.push(o.baseUrl);
+        seen.push(o);
         return matching();
       },
     });
     await readGovernanceDrift(input(d), capture({ GITLAB_TOKEN: "t" }));
     await readGovernanceDrift(input(d), capture({ GITLAB_TOKEN: "t", GITLAB_BASE_URL: "https://gitlab.example.com" }));
-    expect(seen).toEqual(["https://gitlab.com", "https://gitlab.example.com"]);
+    await readGovernanceDrift(input(d, { config: { file: "governance.yml", tokenEnv: "MY_TOKEN", baseUrlEnv: "MY_URL" } }), capture({ MY_TOKEN: "abc", MY_URL: "https://git.example.org" }));
+    expect(seen).toEqual([
+      { baseUrl: "https://gitlab.com", token: "t" },
+      { baseUrl: "https://gitlab.example.com", token: "t" },
+      { baseUrl: "https://git.example.org", token: "abc" },
+    ]);
   });
 
-  it("refuses --read other than plan and --stack with read-unsupported, and --resource with resource-unsupported", async () => {
+  it("refuses --read other than live-read and --stack with read-unsupported", async () => {
     const d = member();
-    const cases: Array<[Partial<DriftReaderInput>, string]> = [
-      [{ read: "live-read" }, "read-unsupported"],
-      [{ stack: "prod" }, "read-unsupported"],
-      [{ resource: "team/acme/platform" }, "resource-unsupported"],
-    ];
-    for (const [extra, code] of cases) {
+    for (const extra of [{ read: "plan" }, { read: "state" }, { stack: "prod" }] as Array<Partial<DriftReaderInput>>) {
       const out = await readGovernanceDrift(input(d, extra), deps(matching()));
       expectValid(out);
-      expect(out).toMatchObject({ refused: { code } });
+      expect(out).toEqual({ refused: { code: "read-unsupported", message: expect.any(String) } });
     }
+    expectValid(await readGovernanceDrift(input(d, { read: "live-read" }), deps(matching())));
   });
 
-  it("throws for a member with no policy, which chant reports as a failed read", async () => {
+  it("refuses with no-drift-read for a member with no policy", async () => {
     dir = mkdtempSync(join(tmpdir(), "gitlab-warden-drift-"));
-    await expect(readGovernanceDrift(input(dir), deps(matching()))).rejects.toThrow(/no governance policy/);
+    const out = await readGovernanceDrift(input(dir), deps(matching()));
+    expectValid(out);
+    expect(out).toEqual({ refused: { code: "no-drift-read", message: expect.stringContaining("has no governance policy") } });
+  });
+
+  it("throws for a policy that does not load, which chant reports as a failed read", async () => {
+    await expect(readGovernanceDrift(input(member("governance.yml", "nodes: {acme: [unclosed\n")), deps(matching()))).rejects.toThrow();
   });
 
   it("reads a member that still has governance.yaml, with a deprecation note", async () => {
