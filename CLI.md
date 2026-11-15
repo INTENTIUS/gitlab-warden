@@ -1,14 +1,17 @@
 # CLI reference
 
-One binary, two subcommands:
+One binary, three subcommands:
 
 ```sh
 gitlab-warden reconcile --config governance.yml [flags]
+gitlab-warden repos [--out <file>] [flags]
 gitlab-warden migrate <path> [flags]
 ```
 
 `reconcile` is the governance loop this page documents; with `--plan-json` it
-also writes the plan as a chant change-set part. `migrate` translates
+also writes the plan as a chant change-set part. `repos` writes the policy's
+group's project list for `chant workspace check --forge-repos` (see "repos"
+below). `migrate` translates
 GitHub Actions workflows into GitLab CI YAML and has its own page
 ([MIGRATE.md](MIGRATE.md), flags included). `gitlab-warden --help` (or no
 arguments, or `--help` after a subcommand) prints usage;
@@ -140,13 +143,65 @@ says which cycles are missing. The entries the other cycles planned stay in
 the part. Once the cycles have run, the file is written whatever the exit
 code.
 
+## repos
+
+`repos` lists every project of the group the policy governs, its subgroups'
+projects and archived ones included, and writes the list in the format
+`chant workspace check --forge-repos <file>` reads. chant never asks the forge
+itself: it compares this list with an org workspace's `repo` members, and
+reports a repository the forge lists that no member names (WSP014) and a
+member naming a repository the forge no longer lists (WSP015). An archived
+project need not be declared. Projects that other namespaces share with the
+group are left out.
+
+```sh
+gitlab-warden repos --config governance.yml --out forge-repos.json
+
+chant workspace check --forge-repos forge-repos.json
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--config <path>` | `governance.yml` | policy file, found and read the same way as for `reconcile` |
+| `--config-mode fold\|run\|check` | `fold` | how a `.ts` policy is evaluated, as for `reconcile` |
+| `--group <path>` | the policy's only top-level group | the group to list, by full path; it must be one of the policy's `kind: group` nodes, a subgroup node included. A policy with several top-level groups needs it. `--org <path>` is the same flag under the name forgejo-warden and github-warden use |
+| `--out <file>` | stdout | file to write the list to |
+| `--base-url <url>` | `https://gitlab.com` | GitLab instance URL for self-managed |
+| `--base-url-env <VAR>` | none | read the base URL from an env var instead (`--base-url` wins if both are given) |
+| `--token-env <VAR>` | `GITLAB_TOKEN` | env var holding the API token; `read_api` scope is enough, and it needs to see the group's private projects |
+
+A top-level group is a group node that no other group node in the policy
+contains, so a policy declaring `acme` and `acme/platform` lists `acme` by
+default. The output names the forge and the group (as `org`, the field chant
+reads) and lists each project by its web URL, sorted, with `archived: true` on
+an archived one:
+
+```json
+{
+  "forge": "gitlab",
+  "org": "acme",
+  "repos": [
+    { "url": "https://gitlab.com/acme/api" },
+    { "url": "https://gitlab.com/acme/legacy", "archived": true },
+    { "url": "https://gitlab.com/acme/platform/runner" }
+  ]
+}
+```
+
+chant matches URLs by host and full path, so a member that names the project
+by its https or ssh clone URL, with or without `.git`, matches the web URL
+here. A group the instance does not have, or one the token cannot see, exits 3
+rather than writing an empty list, which chant would read as every member
+dropped. A policy with no group node, several top-level groups and no
+`--group`, or a `--group` the policy does not declare exits 2.
+
 ## Exit codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Success: the plan printed (dry-run), or apply completed with no failures. |
 | 1 | Guardrail block: apply mode, at least one guardrail tripped, and `--allow-guardrail-override` was not set. For `migrate --strict`: error-severity findings remain. |
-| 2 | Argument or config error (unknown flag, unknown cycle, unreadable or invalid config, missing auth). |
+| 2 | Argument or config error (unknown flag, unknown cycle, unreadable or invalid config, missing auth, a group `repos` cannot pick). |
 | 3 | Runtime error (API failure, an errored cycle, failed apply entries, or a file that could not be written). |
 
 In CI, that means: a dry-run job fails only on real errors, and an apply job
