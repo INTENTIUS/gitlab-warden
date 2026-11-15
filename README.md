@@ -160,10 +160,32 @@ older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.
 | Probe | `governance.yml`, or the older `governance.yaml`, directly in the member's directory |
 | Member file | `governance.yml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012`, so a member that still has `governance.yaml` gets `WSP012` until the file is renamed |
 | Outputs | `repos`, the project nodes in `nodes`, and `teams`, the group nodes in `nodes`, for [member links](https://intentius.io/chant/reference/workspace-declaration/#member-links) |
-| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yml` into graph IR with no GitLab call (a member with only `governance.yaml` is read with a deprecation note on stderr). A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it |
+| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yml` into graph IR with no GitLab call (a member with only `governance.yaml` is read with a deprecation note on stderr). A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared, with no live state |
+| Drift | `drift.reader` names `dist/drift-reader.mjs`, which `chant workspace drift --member <name>` runs. See [Drift in a chant workspace](#drift-in-a-chant-workspace) |
 
 The schema is stricter than the loader: the loader drops a field it does not know, and the schema refuses it, so a
 misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged.
+
+### Drift in a chant workspace
+
+`chant workspace drift --member <name>` reads a governance member through the kind's drift reader, which needs chant
+`>= 0.124.96` (`KIND_DRIFT_READER_FLOOR`); an older chant can't read the kinds file's `drift` block. The reader runs
+every cycle as a dry-run reconcile against GitLab, so it reads and never writes, and returns chant's drift stream. It
+runs inside chant's process and takes its credentials from the environment: the token from `GITLAB_TOKEN` and the
+instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`. Without a token, or without a policy in the
+member's directory, the read is refused with `no-drift-read`.
+
+Each record's address is a node of the member's graph, so chant colours the graph by it: `team/<group>`,
+`repo/<project>`, `protection/<project>/<branch>` for a declared protected branch and `app/<path>/<name>` for a declared
+integration. An instance node reads as `instance/<path>` and has no graph node. A node the plan changes is `drifted`,
+and each planned change under it is an attribute: an update gives one per field (`member[#alice].accessLevel`, declared
+value before and live value after), a create the declared value with nothing live, a delete the live value with
+nothing declared. Variables, hooks, integrations, deploy keys and tokens keep the path and never the values. A node
+the plan leaves alone is `in-sync`. When a cycle errors at a node, the node and what is declared on it are
+`not-observed` with reason `read-failed` (or `drifted` with `attributesUnobserved` when other cycles found drift
+there), and a cycle the request budget skipped makes every address `not-observed` with reason `not-reached`, so an
+incomplete read never reads as no drift. `--resource <address>` reconciles only that address's node; `--read` other
+than `live-read` and `--stack` are refused with `read-unsupported`.
 
 ## Tests
 
