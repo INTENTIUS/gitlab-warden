@@ -151,17 +151,19 @@ as a member, so `chant workspace ls` and `chant workspace graph` list the policy
 The kind is data in `workspace-kinds.json`, exported at `@intentius/gitlab-warden/workspace-kinds`. chant reads it without
 importing the package.
 
+The kind needs chant `>= 0.124.49`: its `memberFile` arrived in `0.124.48` and its `graph.reader` in `0.124.49`, and an
+older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.json` against chant's
+`workspace-kinds.schema.json`, and the graph the reader draws for a sample policy against chant's graph schema.
+
 | Part | Value |
 |---|---|
 | Probe | `governance.yaml` directly in the member's directory |
 | Member file | `governance.yaml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012` |
 | Outputs | `repos`, the project nodes in `nodes`, and `teams`, the group nodes in `nodes`, for [member links](https://intentius.io/chant/reference/workspace-declaration/#member-links) |
-| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yaml` into graph IR with no GitLab call. A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it. Needs a chant that has [chant#4413](https://github.com/INTENTIUS/chant/issues/4413) |
+| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yaml` into graph IR with no GitLab call. A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it |
 
 The schema is stricter than the loader: the loader drops a field it does not know, and the schema refuses it, so a
-misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged. A member kind with a
-`memberFile` needs a chant that has [chant#3672](https://github.com/INTENTIUS/chant/issues/3672); an older chant
-fails the kinds file with `WSP002`.
+misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged.
 
 ## Tests
 
