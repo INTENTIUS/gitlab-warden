@@ -170,22 +170,22 @@ misspelled field fails `chant workspace check` before a reconcile silently leave
 
 `chant workspace drift --member <name>` reads a governance member through the kind's drift reader, which needs chant
 `>= 0.124.96` (`KIND_DRIFT_READER_FLOOR`); an older chant can't read the kinds file's `drift` block. The reader runs
-every cycle as a dry-run reconcile against GitLab, so it reads and never writes, and returns chant's drift stream. It
-runs inside chant's process and takes its credentials from the environment: the token from `GITLAB_TOKEN` and the
-instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`. Without a token, or without a policy in the
-member's directory, the read is refused with `no-drift-read`.
+every cycle as a dry-run reconcile against GitLab, so it reads and never writes, and returns chant's drift stream for
+the `plan` read. It runs inside chant's process and takes its credentials from the environment: the token from
+`GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`. Without a token the read is
+refused with `no-drift-read`. A member with no policy, or an invalid one, fails the read.
 
-Each record's address is a node of the member's graph, so chant colours the graph by it: `team/<group>`,
-`repo/<project>`, `protection/<project>/<branch>` for a declared protected branch and `app/<path>/<name>` for a declared
-integration. An instance node reads as `instance/<path>` and has no graph node. A node the plan changes is `drifted`,
-and each planned change under it is an attribute: an update gives one per field (`member[#alice].accessLevel`, declared
-value before and live value after), a create the declared value with nothing live, a delete the live value with
-nothing declared. Variables, hooks, integrations, deploy keys and tokens keep the path and never the values. A node
-the plan leaves alone is `in-sync`. When a cycle errors at a node, the node and what is declared on it are
-`not-observed` with reason `read-failed` (or `drifted` with `attributesUnobserved` when other cycles found drift
-there), and a cycle the request budget skipped makes every address `not-observed` with reason `not-reached`, so an
-incomplete read never reads as no drift. `--resource <address>` reconciles only that address's node; `--read` other
-than `live-read` and `--stack` are refused with `read-unsupported`.
+Each planned change is one record. A create is `pending` (declared, absent on GitLab), an update is `drifted` with
+each changed field as an attribute (declared value before, live value after), and a delete, planned only for an owned
+collection, is `undeclared`. Variables, hooks, integrations, deploy keys and tokens keep the field names and never the
+values. The address is the declared path, and the graph's node id where the graph draws one, so chant places the
+record on that node: group settings are `team/<group>`, project settings `repo/<project>`, a protected branch
+`protection/<project>/<branch>` and an integration `app/<path>/<name>`. Other changes are
+`<resourceType>/<path>/<key>`, such as `member/acme/platform/alice`. A policy GitLab matches gives no records. A cycle
+that errors gives a `not-observed` record at `cycle/<path>/<cycle>` with reason `read-failed`, and one the request
+budget skipped a `not-observed` record with reason `not-reached`, so an incomplete read never reads as no drift.
+`--read` other than `plan` and `--stack` are refused with `read-unsupported`, and `--resource` with
+`resource-unsupported`, since a reconcile plans whole groups and projects.
 
 ## Tests
 
