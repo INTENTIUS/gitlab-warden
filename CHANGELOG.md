@@ -24,3 +24,14 @@ up to `0.6.1` are not recorded here.
   still named `governance.yaml` is read with a deprecation note on stderr, and
   the kind's probe still finds it; `chant workspace check` reports `WSP012`
   for such a member until the file is renamed.
+- The policy can be a `.ts` file whose default export is the policy, typed with
+  `satisfies GovernanceConfig` from `@intentius/gitlab-warden`, the way
+  forgejo-warden reads one. warden folds it to its value with
+  `@intentius/tsad-reference` (`^2.3.0`, a new dependency) without running it;
+  `--config-mode run` imports it instead and `--config-mode check` does both
+  and exits 2 if they differ. Without `--config`, `governance.ts` is read when
+  neither `governance.yml` nor `governance.yaml` is in the working directory.
+  When a folded policy's field drifts, the plan names where the policy wrote
+  it: `direct`, or the preset argument and its line. The package now has a
+  main export with types: the policy types, `loadGovernancePolicy`, and the
+  provenance helpers. See [POLICY.md](POLICY.md#a-policy-in-typescript).

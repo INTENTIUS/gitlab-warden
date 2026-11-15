@@ -35,6 +35,21 @@ describe("parseReconcileArgs", () => {
     expect(() => parseReconcileArgs(["--config"])).toThrow(/--config requires a value/);
   });
 
+  it("--config-mode defaults to fold and takes fold, run or check, as in forgejo-warden", () => {
+    expect(parseReconcileArgs([]).configMode).toBe("fold");
+    for (const m of ["fold", "run", "check"] as const) {
+      expect(parseReconcileArgs(["--config", "governance.ts", "--config-mode", m]).configMode).toBe(m);
+    }
+    expect(() => parseReconcileArgs(["--config-mode", "eval"])).toThrow(/--config-mode must be "fold", "run" or "check", got: eval/);
+    expect(() => parseReconcileArgs(["--config-mode"])).toThrow(/got: \(missing\)/);
+    try {
+      parseReconcileArgs(["--config-mode", "eval"]);
+    } catch (err) {
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).code).toBe(2);
+    }
+  });
+
   it("parses --removal-cap-fraction and validates the (0, 1] range at exit 2", () => {
     expect(parseReconcileArgs(["--config", "g", "--removal-cap-fraction", "0.5"]).removalCapFraction).toBe(0.5);
     expect(parseReconcileArgs(["--config", "g", "--removal-cap-fraction", "1"]).removalCapFraction).toBe(1);
