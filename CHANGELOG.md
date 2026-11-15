@@ -3,7 +3,7 @@
 Changes to `@intentius/gitlab-warden`. Versions follow semver, and releases
 up to `0.6.1` are not recorded here.
 
-## Unreleased
+## 0.7.0 (2026-11-14)
 
 - The package ships a `forge-governance` member kind for chant workspaces in
   `workspace-kinds.json`, exported at `@intentius/gitlab-warden/workspace-kinds`.
