@@ -3,7 +3,7 @@
 Changes to `@intentius/gitlab-warden`. Versions follow semver, and releases
 up to `0.6.1` are not recorded here.
 
-## Unreleased
+## 0.8.0 (2026-11-15)
 
 - `reconcile --plan-json` gives each entry its `forge-governance` graph node id
   as its address, so the part's entries place on the same nodes as the drift
