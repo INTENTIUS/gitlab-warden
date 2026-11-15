@@ -3,7 +3,7 @@
 One binary, two subcommands:
 
 ```sh
-gitlab-warden reconcile --config governance.yaml [flags]
+gitlab-warden reconcile --config governance.yml [flags]
 gitlab-warden migrate <path> [flags]
 ```
 
@@ -18,7 +18,7 @@ build time).
 
 | Flag | Default | Meaning |
 |---|---|---|
-| `--config <path>` | **required** | governance config file (YAML, or JSON when the path ends in `.json`) |
+| `--config <path>` | `governance.yml` | governance config file (YAML, or JSON when the path ends in `.json`). Without the flag, `governance.yml` in the working directory; when only `governance.yaml` is there, that file is read with a deprecation note on stderr. A path naming `governance.yaml` gets the same note, as does a path naming `governance.yml` that is missing when the `governance.yaml` beside it exists, which is then read instead |
 | `--mode dry-run\|apply` | `dry-run` | `dry-run` computes and prints the plan; `apply` mutates after guardrails pass |
 | `--cycles <name[,name…]>` | all 20 | comma-separated cycle names to run (see [CYCLES.md](CYCLES.md)); an unknown name is an error listing the known ones |
 | `--base-url <url>` | `https://gitlab.com` | GitLab instance URL for self-managed, e.g. `https://gitlab.example.com` |
@@ -90,15 +90,15 @@ fails loudly on a guardrail trip (1) or partial application (3). See
 
 ```sh
 # Plan everything against gitlab.com
-gitlab-warden reconcile --config governance.yaml
+gitlab-warden reconcile --config governance.yml
 
 # Apply only the flagship push-rule reconcile against self-managed
 export GITLAB_TOKEN=glpat-…
-gitlab-warden reconcile --config governance.yaml \
+gitlab-warden reconcile --config governance.yml \
   --mode apply --cycles push-rules \
   --base-url https://gitlab.example.com
 
 # Base URL and token both from the environment (CI-friendly)
-gitlab-warden reconcile --config governance.yaml \
+gitlab-warden reconcile --config governance.yml \
   --base-url-env CI_SERVER_URL --token-env WARDEN_TOKEN
 ```

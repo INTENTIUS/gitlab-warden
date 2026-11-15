@@ -30,7 +30,7 @@ into `~/.claude/skills/`. Then paste this prompt, filling in the placeholders:
 
 ```text
 Use the gitlab-warden skill to help me set up governance for my GitLab group
-<GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes: policy for the
+<GROUP_PATH> on <GITLAB_URL>. Author a governance.yml nodes: policy for the
 groups and projects I care about (ask me which slices matter), then run a
 dry-run reconcile and walk me through the plan. Do not apply anything.
 ```
@@ -54,7 +54,7 @@ no clone at all:
 
 ```bash
 # Dry-run: reads only, prints a plan, changes nothing.
-npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
+npx @intentius/gitlab-warden reconcile --config governance.yml --token-env GITLAB_TOKEN --mode dry-run
 ```
 
 The npm package is also what your pipeline installs later (the
@@ -109,14 +109,14 @@ instance; the e2e runs CE).
 
 ```sh
 npx @intentius/gitlab-warden reconcile \
-  --config governance.yaml \
+  --config governance.yml \
   --mode dry-run \
   --token-env GITLAB_TOKEN \
   --base-url https://gitlab.example.com   # omit for gitlab.com
 ```
 
 ```yaml
-# governance.yaml — declared nodes, keyed by full path
+# governance.yml — declared nodes, keyed by full path
 nodes:
   acme/platform:
     kind: group
@@ -157,10 +157,10 @@ older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.
 
 | Part | Value |
 |---|---|
-| Probe | `governance.yaml` directly in the member's directory |
-| Member file | `governance.yaml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012` |
+| Probe | `governance.yml`, or the older `governance.yaml`, directly in the member's directory |
+| Member file | `governance.yml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012`, so a member that still has `governance.yaml` gets `WSP012` until the file is renamed |
 | Outputs | `repos`, the project nodes in `nodes`, and `teams`, the group nodes in `nodes`, for [member links](https://intentius.io/chant/reference/workspace-declaration/#member-links) |
-| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yaml` into graph IR with no GitLab call. A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it |
+| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yml` into graph IR with no GitLab call (a member with only `governance.yaml` is read with a deprecation note on stderr). A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it |
 
 The schema is stricter than the loader: the loader drops a field it does not know, and the schema refuses it, so a
 misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged.

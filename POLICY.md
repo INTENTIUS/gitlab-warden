@@ -5,7 +5,10 @@ The policy is the foundation of this tool: one YAML file with a single top-level
 (optionally) the self-managed instance you govern. Everything else (the CLI, the
 cycles, the guardrails) serves the policy. It is the one file you must author.
 
-- Loaded via `--config governance.yaml` (YAML, or JSON if the path ends in `.json`).
+- Loaded from `governance.yml` in the working directory, or the path `--config`
+  names (YAML, or JSON if the path ends in `.json`). A policy still named
+  `governance.yaml` is read with a deprecation note on stderr; rename it to
+  `governance.yml`.
 - Schema (authoritative): `src/config/types.ts`.
 - A **node** is one declared group or project (or the instance), keyed by full
   path (`acme/platform` is a group, `acme/platform/api` a project). Each node
@@ -99,7 +102,7 @@ Copy this, delete what you don't need, and edit it. Every field from
 slice and mark tier requirements.
 
 ```yaml
-# governance.yaml — one top-level key: nodes, a map keyed by full path.
+# governance.yml — one top-level key: nodes, a map keyed by full path.
 nodes:
 
   # ========== a group node ==========

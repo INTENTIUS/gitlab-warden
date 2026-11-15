@@ -39,7 +39,7 @@ governance:plan:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode dry-run
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
@@ -51,7 +51,7 @@ governance:apply:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode apply
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
@@ -65,7 +65,7 @@ governance:drift:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode apply
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
@@ -136,7 +136,7 @@ jobs:
         with: { node-version: 22 }
       - run: >
           npx @intentius/gitlab-warden reconcile
-          --config governance.yaml
+          --config governance.yml
           --mode ${{ github.event_name == 'pull_request' && 'dry-run' || 'apply' }}
           --base-url https://gitlab.example.com
           --token-env GITLAB_TOKEN

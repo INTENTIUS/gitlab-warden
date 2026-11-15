@@ -18,3 +18,9 @@ up to `0.6.1` are not recorded here.
   `migrate` now turns a GitHub matrix flow sequence such as `[ubuntu, debian]`
   into a list in `parallel.matrix` instead of a quoted string.
 - Node 24 or later is required (`engines.node` is `>=24`).
+- The policy file is `governance.yml`, the name forgejo-warden and
+  github-warden read. `reconcile` defaults `--config` to `governance.yml`, and
+  the `forge-governance` kind checks and graphs `governance.yml`. A policy
+  still named `governance.yaml` is read with a deprecation note on stderr, and
+  the kind's probe still finds it; `chant workspace check` reports `WSP012`
+  for such a member until the file is renamed.

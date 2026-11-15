@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { parse } from "yaml";
 import { readGovernance } from "./reader.js";
 import read from "./entry.js";
@@ -34,7 +34,7 @@ nodes:
 const edge = (g: ReturnType<typeof readGovernance>, from: string, to: string) => g.edges.find((e) => e.from === from && e.to === to);
 
 describe("readGovernance", () => {
-  const g = readGovernance(parse(POLICY), "governance.yaml");
+  const g = readGovernance(parse(POLICY), "governance.yml");
 
   test("nodes for the orgs, groups, projects, protection and integrations; an instance node is left out", () => {
     expect(g.nodes.map((n) => n.id).sort()).toEqual([
@@ -75,10 +75,26 @@ describe("the reader module", () => {
   const dir = mkdtempSync(join(tmpdir(), "glw-graph-"));
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("reads governance.yaml from the member's directory", () => {
+  test("reads governance.yml from the member's directory", () => {
     mkdirSync(join(dir, "m"));
-    writeFileSync(join(dir, "m", "governance.yaml"), POLICY);
-    expect(read({ dir: join(dir, "m"), config: {} }).nodes).toHaveLength(9);
+    writeFileSync(join(dir, "m", "governance.yml"), POLICY);
+    const g = read({ dir: join(dir, "m"), config: {} });
+    expect(g.nodes).toHaveLength(9);
+    expect(g.nodes[0].sourceLoc).toEqual({ file: "governance.yml" });
+  });
+
+  test("still reads a member's governance.yaml, with a deprecation note on stderr", () => {
+    mkdirSync(join(dir, "legacy"));
+    writeFileSync(join(dir, "legacy", "governance.yaml"), POLICY);
+    const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const g = read({ dir: join(dir, "legacy"), config: { file: "governance.yml" } });
+      expect(g.nodes).toHaveLength(9);
+      expect(g.nodes[0].sourceLoc).toEqual({ file: "governance.yaml" });
+      expect(String(err.mock.calls[0]?.[0])).toMatch(/governance\.yaml is deprecated; rename it to governance\.yml/);
+    } finally {
+      err.mockRestore();
+    }
   });
 });
 
@@ -109,7 +125,7 @@ describe("the reader's output against chant's graph schema", () => {
   });
 
   test("the schema refuses a misspelled node field", () => {
-    const bad = structuredClone(readGovernance(parse(POLICY), "governance.yaml")) as any;
+    const bad = structuredClone(readGovernance(parse(POLICY), "governance.yml")) as any;
     bad.nodes[0].attributes = bad.nodes[0].attrs;
     expect(validate(bad)).toBe(false);
   });

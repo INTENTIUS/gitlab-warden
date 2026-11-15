@@ -55,8 +55,10 @@ describe("forge-governance kinds file", () => {
     expect(validateKinds(kinds), JSON.stringify(validateKinds.errors)).toBe(true);
   });
 
-  test("probes for the file it checks", () => {
-    expect(kind.probe).toEqual({ anyFile: [kind.memberFile.path] });
+  test("checks governance.yml and probes for it and the older governance.yaml", () => {
+    expect(kind.memberFile.path).toBe("governance.yml");
+    expect(kind.graph.config.file).toBe("governance.yml");
+    expect(kind.probe).toEqual({ anyFile: ["governance.yml", "governance.yaml"] });
   });
 
   test("is exported and shipped by the package", () => {

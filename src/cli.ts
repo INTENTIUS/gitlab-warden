@@ -26,6 +26,7 @@ import { CliError } from "./cli-error.js";
 import { parseMigrateArgs } from "./migrate/args.js";
 import { runMigrate } from "./migrate/migrate.js";
 import type { GovernanceConfig } from "./config/types.js";
+import { deprecationNote, resolvePolicyPath } from "./config/policy-path.js";
 import pkg from "../package.json" with { type: "json" };
 
 /** Inlined from package.json at build time — always matches the published version. */
@@ -34,7 +35,8 @@ const VERSION: string = pkg.version;
 export { CliError } from "./cli-error.js";
 
 export interface ReconcileArgs {
-  config: string;
+  /** `--config`; undefined reads governance.yml (or governance.yaml) in the working directory. */
+  config: string | undefined;
   mode: "dry-run" | "apply";
   cycles: string[];
   baseUrl: string | undefined;
@@ -59,7 +61,7 @@ const KNOWN_FLAGS = new Set([
 /** Parse reconcile argv. Pure: throws `CliError` (with exit code) on bad input. */
 export function parseReconcileArgs(argv: string[]): ReconcileArgs {
   const args: ReconcileArgs = {
-    config: "",
+    config: undefined,
     mode: "dry-run",
     cycles: [],
     baseUrl: undefined,
@@ -120,7 +122,6 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
     i++;
   }
 
-  if (!args.config) throw new CliError(2, "--config is required");
   return args;
 }
 
@@ -165,11 +166,15 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
     throw err;
   }
 
+  const policy = resolvePolicyPath(args.config);
+  if (!policy) die(2, "no --config given and no governance.yml in the working directory");
+  if (policy.deprecated) process.stderr.write(deprecationNote(policy.path));
+
   let config: GovernanceConfig;
   try {
-    config = loadConfig(args.config);
+    config = loadConfig(policy.path);
   } catch (err) {
-    die(2, `invalid governance config "${args.config}": ${errMsg(err)}`);
+    die(2, `invalid governance config "${policy.path}": ${errMsg(err)}`);
   }
 
   const baseUrl = args.baseUrl ?? (args.baseUrlEnv ? env(args.baseUrlEnv) : undefined);
@@ -242,11 +247,11 @@ function printUsage(): void {
       "Usage: gitlab-warden <subcommand> [flags]",
       "",
       "Subcommands:",
-      "  reconcile --config <path> [flags]   Reconcile governance policy against live GitLab.",
-      "  migrate <path> [flags]              Translate GitHub Actions workflows to GitLab CI.",
+      "  reconcile [--config <path>] [flags] Reconcile governance policy against live GitLab.",
+      "  migrate <path> [flags]               Translate GitHub Actions workflows to GitLab CI.",
       "",
       "Reconcile flags:",
-      "  --config <path>               Governance config (YAML or JSON). Required.",
+      "  --config <path>               Governance config, YAML or JSON (default governance.yml; governance.yaml is still read).",
       "  --mode dry-run|apply          Reconcile mode (default: dry-run).",
       "  --cycles <name[,name...]>     Cycles to run (default: all).",
       "  --base-url <url>              GitLab instance URL (default https://gitlab.com; or --base-url-env <VAR>).",
