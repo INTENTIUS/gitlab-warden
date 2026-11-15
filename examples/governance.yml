@@ -1,0 +1,39 @@
+# The same policy as governance.ts, with every field written out.
+nodes:
+  acme:
+    kind: group
+    groupSettings:
+      description: Engineering
+      visibility: private
+  acme/api:
+    kind: project
+    projectSettings:
+      mergeMethod: ff
+      squashOption: always
+      onlyAllowMergeIfPipelineSucceeds: true
+      removeSourceBranchAfterMerge: true
+      topics: [service, api]
+    protectedBranches:
+      - name: main
+        pushAccessLevel: 0
+        mergeAccessLevel: 40
+        allowForcePush: false
+    approvalRules:
+      - name: review
+        approvalsRequired: 2
+  acme/web:
+    kind: project
+    projectSettings:
+      mergeMethod: merge
+      squashOption: default_off
+      onlyAllowMergeIfPipelineSucceeds: true
+      removeSourceBranchAfterMerge: true
+      topics: [service, web]
+    protectedBranches:
+      - name: main
+        pushAccessLevel: 0
+        mergeAccessLevel: 40
+        allowForcePush: false
+    approvalRules:
+      - name: review
+        approvalsRequired: 1

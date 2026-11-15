@@ -28,6 +28,10 @@
     "workspace-kinds.json"
   ],
   "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "default": "./dist/index.js"
+    },
     "./workspace-kinds": "./workspace-kinds.json",
     "./package.json": "./package.json"
   },
@@ -38,8 +42,9 @@
     "test:e2e:run": "vitest run --config vitest.e2e.config.ts",
     "e2e:up": "bash e2e/bootstrap.sh",
     "e2e:down": "docker compose -f e2e/docker-compose.yml down -v",
-    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';import{fileURLToPath as __f2p}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__f2p(import.meta.url);const __dirname=__dn(__filename);\" --outfile=dist/cli.js && chmod +x dist/cli.js && npm run build:graph",
+    "build": "esbuild src/cli.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';import{fileURLToPath as __f2p}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__f2p(import.meta.url);const __dirname=__dn(__filename);\" --external:@intentius/tsad-reference --outfile=dist/cli.js && chmod +x dist/cli.js && esbuild src/index.ts --bundle --platform=node --format=esm --external:@intentius/chant --external:@intentius/tsad-reference --banner:js=\"import{createRequire as __cr}from'module';import{fileURLToPath as __f2p}from'url';import{dirname as __dn}from'path';const require=__cr(import.meta.url);const __filename=__f2p(import.meta.url);const __dirname=__dn(__filename);\" --outfile=dist/index.js && npm run build:types && npm run build:graph",
     "build:graph": "esbuild src/graph/entry.ts --bundle --platform=node --format=esm --banner:js=\"import{createRequire as __cr}from'module';const require=__cr(import.meta.url);\" --outfile=dist/graph-reader.mjs",
+    "build:types": "tsc -p tsconfig.types.json",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
@@ -54,6 +59,8 @@
     "@intentius/chant": "^0.124.95",
     "@intentius/chant-lexicon-github": "^0.124.95",
     "@intentius/chant-lexicon-gitlab": "^0.124.95",
+    "@intentius/tsad-reference": "^2.3.0",
     "yaml": "^2.9.0"
-  }
+  },
+  "types": "./dist/types/index.d.ts"
 }

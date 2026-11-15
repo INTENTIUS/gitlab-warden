@@ -16,9 +16,7 @@
  *             3 runtime error.
  */
 
-import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { parse as parseYaml } from "yaml";
 import { createClient } from "./auth/client.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
 import { CYCLE_REGISTRY } from "./cli/registry.js";
@@ -27,6 +25,8 @@ import { parseMigrateArgs } from "./migrate/args.js";
 import { runMigrate } from "./migrate/migrate.js";
 import type { GovernanceConfig } from "./config/types.js";
 import { deprecationNote, resolvePolicyPath } from "./config/policy-path.js";
+import { loadGovernancePolicy, type ConfigMode } from "./config/load.js";
+import type { PolicyProvenance } from "./reconcile/origin.js";
 import pkg from "../package.json" with { type: "json" };
 
 /** Inlined from package.json at build time — always matches the published version. */
@@ -37,6 +37,8 @@ export { CliError } from "./cli-error.js";
 export interface ReconcileArgs {
   /** `--config`; undefined reads governance.yml (or governance.yaml) in the working directory. */
   config: string | undefined;
+  /** How a `.ts` policy is evaluated: folded without running (default), imported, or both and compared. */
+  configMode: ConfigMode;
   mode: "dry-run" | "apply";
   cycles: string[];
   baseUrl: string | undefined;
@@ -49,6 +51,7 @@ export interface ReconcileArgs {
 
 const KNOWN_FLAGS = new Set([
   "--config",
+  "--config-mode",
   "--mode",
   "--cycles",
   "--base-url",
@@ -62,6 +65,7 @@ const KNOWN_FLAGS = new Set([
 export function parseReconcileArgs(argv: string[]): ReconcileArgs {
   const args: ReconcileArgs = {
     config: undefined,
+    configMode: "fold",
     mode: "dry-run",
     cycles: [],
     baseUrl: undefined,
@@ -86,6 +90,12 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
       case "--config":
         args.config = need(++i, flag);
         break;
+      case "--config-mode": {
+        const v = argv[++i];
+        if (v !== "fold" && v !== "run" && v !== "check") throw new CliError(2, `--config-mode must be "fold", "run" or "check", got: ${v ?? "(missing)"}`);
+        args.configMode = v;
+        break;
+      }
       case "--mode": {
         const v = argv[++i];
         if (v !== "dry-run" && v !== "apply") throw new CliError(2, `--mode must be "dry-run" or "apply", got: ${v ?? "(missing)"}`);
@@ -144,15 +154,6 @@ function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-function loadConfig(path: string): GovernanceConfig {
-  const text = readFileSync(path, "utf-8");
-  const raw = path.toLowerCase().endsWith(".json") ? JSON.parse(text) : parseYaml(text);
-  if (!raw || typeof raw !== "object" || typeof (raw as { nodes?: unknown }).nodes !== "object") {
-    throw new Error("config must be an object with a `nodes` map");
-  }
-  return raw as GovernanceConfig;
-}
-
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
@@ -167,12 +168,13 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
   }
 
   const policy = resolvePolicyPath(args.config);
-  if (!policy) die(2, "no --config given and no governance.yml in the working directory");
+  if (!policy) die(2, "no --config given and no governance.yml (or governance.ts) in the working directory");
   if (policy.deprecated) process.stderr.write(deprecationNote(policy.path));
 
   let config: GovernanceConfig;
+  let provenance: PolicyProvenance | undefined;
   try {
-    config = loadConfig(policy.path);
+    ({ config, provenance } = await loadGovernancePolicy(policy.path, args.configMode));
   } catch (err) {
     die(2, `invalid governance config "${policy.path}": ${errMsg(err)}`);
   }
@@ -202,6 +204,7 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
       mode: args.mode,
       allowGuardrailOverride: args.allowGuardrailOverride,
       removalDeltaCapFraction: args.removalCapFraction,
+      provenance,
     });
   } catch (err) {
     die(3, `reconcile failed: ${errMsg(err)}`);
@@ -251,7 +254,8 @@ function printUsage(): void {
       "  migrate <path> [flags]               Translate GitHub Actions workflows to GitLab CI.",
       "",
       "Reconcile flags:",
-      "  --config <path>               Governance config, YAML or JSON (default governance.yml; governance.yaml is still read).",
+      "  --config <path>               Governance config: YAML, JSON, or a .ts policy (default governance.yml; then governance.yaml, then governance.ts).",
+      "  --config-mode fold|run|check  How a .ts policy is evaluated (default: fold).",
       "  --mode dry-run|apply          Reconcile mode (default: dry-run).",
       "  --cycles <name[,name...]>     Cycles to run (default: all).",
       "  --base-url <url>              GitLab instance URL (default https://gitlab.com; or --base-url-env <VAR>).",

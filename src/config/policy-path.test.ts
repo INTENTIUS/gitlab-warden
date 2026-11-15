@@ -13,7 +13,15 @@ describe("resolvePolicyPath", () => {
     expect(resolvePolicyPath("policy/governance.yml", only("policy/governance.yaml"))).toEqual({ path: "policy/governance.yaml", deprecated: true });
   });
 
-  it("finds nothing when no path is given and neither file exists", () => {
+  it("picks up governance.ts when no path is given and neither YAML file exists", () => {
+    expect(resolvePolicyPath(undefined, only("governance.ts"))).toEqual({ path: "governance.ts", deprecated: false });
+    expect(resolvePolicyPath(undefined, only("governance.ts", "governance.yml"))).toEqual({ path: "governance.yml", deprecated: false });
+    expect(resolvePolicyPath(undefined, only("governance.ts", "governance.yaml"))).toEqual({ path: "governance.yaml", deprecated: true });
+    // A named governance.yml that is missing is not swapped for governance.ts.
+    expect(resolvePolicyPath("governance.yml", only("governance.ts"))).toEqual({ path: "governance.yml", deprecated: false });
+  });
+
+  it("finds nothing when no path is given and none of the files exists", () => {
     expect(resolvePolicyPath(undefined, only())).toBeUndefined();
   });
 
