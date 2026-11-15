@@ -4,6 +4,8 @@
  *
  * Subcommands:
  *   reconcile   Load config, build an authed client, run selected cycles.
+ *               `--plan-json <file>` also writes the plan as a chant
+ *               change-set part.
  *   migrate     Translate GitHub Actions workflows into GitLab CI YAML.
  *
  * Auth is a GitLab API token; the instance host defaults to gitlab.com and is
@@ -17,8 +19,10 @@
  */
 
 import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
 import { createClient } from "./auth/client.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
+import { defaultMemberName, planPart } from "./reconcile/plan-part.js";
 import { CYCLE_REGISTRY } from "./cli/registry.js";
 import { CliError } from "./cli-error.js";
 import { parseMigrateArgs } from "./migrate/args.js";
@@ -47,6 +51,10 @@ export interface ReconcileArgs {
   allowGuardrailOverride: boolean;
   /** Max deletable fraction per resource type, in (0,1]. Default 0.25 downstream. */
   removalCapFraction: number | undefined;
+  /** File to write the run's plan to, as a chant change-set part. */
+  planJson: string | undefined;
+  /** The workspace member the part names; undefined defaults to the policy directory's name. */
+  member: string | undefined;
 }
 
 const KNOWN_FLAGS = new Set([
@@ -59,6 +67,8 @@ const KNOWN_FLAGS = new Set([
   "--token-env",
   "--allow-guardrail-override",
   "--removal-cap-fraction",
+  "--plan-json",
+  "--member",
 ]);
 
 /** Parse reconcile argv. Pure: throws `CliError` (with exit code) on bad input. */
@@ -73,6 +83,8 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
     tokenEnv: "GITLAB_TOKEN",
     allowGuardrailOverride: false,
     removalCapFraction: undefined,
+    planJson: undefined,
+    member: undefined,
   };
 
   const need = (i: number, flag: string): string => {
@@ -128,8 +140,22 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
         args.removalCapFraction = f;
         break;
       }
+      case "--plan-json":
+        args.planJson = need(++i, flag);
+        break;
+      case "--member":
+        args.member = need(++i, flag);
+        if (args.member.trim() === "") throw new CliError(2, "--member requires a non-empty name");
+        break;
     }
     i++;
+  }
+
+  if (args.planJson !== undefined && args.mode === "apply") {
+    throw new CliError(2, "--plan-json writes a plan without applying it; it cannot be combined with --mode apply");
+  }
+  if (args.member !== undefined && args.planJson === undefined) {
+    throw new CliError(2, "--member names the member of the --plan-json part; give it with --plan-json");
   }
 
   return args;
@@ -179,6 +205,12 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
     die(2, `invalid governance config "${policy.path}": ${errMsg(err)}`);
   }
 
+  let member: string | undefined;
+  if (args.planJson !== undefined) {
+    member = args.member ?? defaultMemberName(policy.path);
+    if (!member) die(2, `cannot name the --plan-json member from "${policy.path}"'s directory; give --member <name>`);
+  }
+
   const baseUrl = args.baseUrl ?? (args.baseUrlEnv ? env(args.baseUrlEnv) : undefined);
   const token = env(args.tokenEnv);
   const client = createClient({ baseUrl, token });
@@ -208,6 +240,15 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
     });
   } catch (err) {
     die(3, `reconcile failed: ${errMsg(err)}`);
+  }
+
+  if (args.planJson !== undefined) {
+    const part = planPart({ member: member!, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred });
+    try {
+      writeFileSync(args.planJson, `${JSON.stringify(part, null, 2)}\n`, "utf-8");
+    } catch (err) {
+      die(3, `failed to write plan to "${args.planJson}": ${errMsg(err)}`);
+    }
   }
 
   for (const cr of result.cycles) {
@@ -262,6 +303,8 @@ function printUsage(): void {
       "  --token-env <VAR>             Env var holding the API token (default GITLAB_TOKEN).",
       "  --allow-guardrail-override    Apply even when guardrails trip.",
       "  --removal-cap-fraction <f>    Max deletable fraction of each resource type's live entries, in (0, 1] (default 0.25).",
+      "  --plan-json <file>            Write the plan as a chant change-set part (dry-run only).",
+      "  --member <name>               Member the part names (default: the policy file's directory name).",
       "",
       "Migrate flags:",
       "  <path>                        One workflow file, or a directory (.github/workflows/).",

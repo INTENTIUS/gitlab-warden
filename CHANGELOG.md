@@ -35,3 +35,10 @@ up to `0.6.1` are not recorded here.
   it: `direct`, or the preset argument and its line. The package now has a
   main export with types: the policy types, `loadGovernancePolicy`, and the
   provenance helpers. See [POLICY.md](POLICY.md#a-policy-in-typescript).
+- `reconcile --plan-json <file>` writes the run's plan as a chant change-set
+  part (`reconcilePlanPart` from `@intentius/chant/change-set`), with lexicon
+  `gitlab`, the shape forgejo-warden and github-warden write. `--member <name>`
+  names the member and defaults to the policy file's directory name. A run
+  where a cycle errored or was deferred writes a `failed` member with no plan
+  digest. `--plan-json` cannot be combined with `--mode apply`. See
+  [CLI.md](CLI.md#plan-as-a-change-set-part).
