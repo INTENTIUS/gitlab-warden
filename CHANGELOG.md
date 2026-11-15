@@ -42,3 +42,10 @@ up to `0.6.1` are not recorded here.
   where a cycle errored or was deferred writes a `failed` member with no plan
   digest. `--plan-json` cannot be combined with `--mode apply`. See
   [CLI.md](CLI.md#plan-as-a-change-set-part).
+- `gitlab-warden repos [--out <file>]` writes the policy's group's project
+  list, its subgroups' projects included and archived projects marked
+  `archived: true`, as `{ forge: "gitlab", org, repos: [{ url, archived? }] }`,
+  the file `chant workspace check --forge-repos` reads to report undeclared
+  (WSP014) and dropped (WSP015) repositories. `--group` (or `--org`, the name
+  the other wardens use) picks the group when the policy has several
+  top-level groups. See [CLI.md](CLI.md#repos).

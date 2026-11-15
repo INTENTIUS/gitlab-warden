@@ -6,6 +6,8 @@
  *   reconcile   Load config, build an authed client, run selected cycles.
  *               `--plan-json <file>` also writes the plan as a chant
  *               change-set part.
+ *   repos       Write the policy's group's project list in the format
+ *               `chant workspace check --forge-repos` reads.
  *   migrate     Translate GitHub Actions workflows into GitLab CI YAML.
  *
  * Auth is a GitLab API token; the instance host defaults to gitlab.com and is
@@ -20,7 +22,8 @@
 
 import { pathToFileURL } from "node:url";
 import { writeFileSync } from "node:fs";
-import { createClient } from "./auth/client.js";
+import { createClient, DEFAULT_BASE_URL } from "./auth/client.js";
+import { forgeRepoList, pickGroup, policyGroups } from "./repos.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
 import { defaultMemberName, planPart } from "./reconcile/plan-part.js";
 import { CYCLE_REGISTRY } from "./cli/registry.js";
@@ -161,6 +164,75 @@ export function parseReconcileArgs(argv: string[]): ReconcileArgs {
   return args;
 }
 
+export interface ReposArgs {
+  /** `--config`; undefined reads governance.yml (or governance.yaml, then governance.ts) in the working directory. */
+  config: string | undefined;
+  configMode: ConfigMode;
+  /** The group to list (`--group`, or `--org` as in the other wardens); undefined means the policy's only top-level group. */
+  group: string | undefined;
+  /** File to write; undefined writes to stdout. */
+  out: string | undefined;
+  baseUrl: string | undefined;
+  baseUrlEnv: string | undefined;
+  tokenEnv: string;
+}
+
+const REPOS_FLAGS = new Set(["--config", "--config-mode", "--group", "--org", "--out", "--base-url", "--base-url-env", "--token-env"]);
+
+/** Parse `repos` argv. Pure: throws `CliError` (with exit code) on bad input. */
+export function parseReposArgs(argv: string[]): ReposArgs {
+  const args: ReposArgs = {
+    config: undefined,
+    configMode: "fold",
+    group: undefined,
+    out: undefined,
+    baseUrl: undefined,
+    baseUrlEnv: undefined,
+    tokenEnv: "GITLAB_TOKEN",
+  };
+  const need = (i: number, flag: string): string => {
+    const v = argv[i];
+    if (v === undefined || v.startsWith("--") || v === "") throw new CliError(2, `${flag} requires a value`);
+    return v;
+  };
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    if (!flag.startsWith("--")) throw new CliError(2, `unexpected positional argument: ${flag}`);
+    if (!REPOS_FLAGS.has(flag)) throw new CliError(2, `unknown flag for repos: ${flag}`);
+    switch (flag) {
+      case "--config":
+        args.config = need(++i, flag);
+        break;
+      case "--config-mode": {
+        const v = argv[++i];
+        if (v !== "fold" && v !== "run" && v !== "check") throw new CliError(2, `--config-mode must be "fold", "run" or "check", got: ${v ?? "(missing)"}`);
+        args.configMode = v;
+        break;
+      }
+      case "--group":
+      case "--org": {
+        const v = need(++i, flag);
+        if (args.group !== undefined && args.group !== v) throw new CliError(2, "--group and --org name the same group; give one");
+        args.group = v;
+        break;
+      }
+      case "--out":
+        args.out = need(++i, flag);
+        break;
+      case "--base-url":
+        args.baseUrl = need(++i, flag);
+        break;
+      case "--base-url-env":
+        args.baseUrlEnv = need(++i, flag);
+        break;
+      case "--token-env":
+        args.tokenEnv = need(++i, flag);
+        break;
+    }
+  }
+  return args;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -272,6 +344,55 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
   process.exit(0);
 }
 
+async function runReposCommand(argv: string[]): Promise<void> {
+  let args: ReposArgs;
+  try {
+    args = parseReposArgs(argv);
+  } catch (err) {
+    if (err instanceof CliError) die(err.code, err.message);
+    throw err;
+  }
+
+  const policy = resolvePolicyPath(args.config);
+  if (!policy) die(2, "no --config given and no governance.yml (or governance.ts) in the working directory");
+  if (policy.deprecated) process.stderr.write(deprecationNote(policy.path));
+
+  let config: GovernanceConfig;
+  try {
+    ({ config } = await loadGovernancePolicy(policy.path, args.configMode));
+  } catch (err) {
+    die(2, `invalid governance config "${policy.path}": ${errMsg(err)}`);
+  }
+
+  let group: string;
+  try {
+    group = pickGroup(policyGroups(config), args.group);
+  } catch (err) {
+    die(2, errMsg(err));
+  }
+
+  const baseUrl = args.baseUrl ?? (args.baseUrlEnv ? env(args.baseUrlEnv) : DEFAULT_BASE_URL);
+  const token = env(args.tokenEnv);
+  const client = createClient({ baseUrl, token });
+
+  let text: string;
+  try {
+    text = `${JSON.stringify(await forgeRepoList(client, group, baseUrl), null, 2)}\n`;
+  } catch (err) {
+    die(3, `listing the repositories of ${group} failed: ${errMsg(err)}`);
+  }
+  if (args.out === undefined) {
+    process.stdout.write(text);
+  } else {
+    try {
+      writeFileSync(args.out, text, "utf-8");
+    } catch (err) {
+      die(3, `failed to write the repository list to "${args.out}": ${errMsg(err)}`);
+    }
+  }
+  process.exit(0);
+}
+
 async function runMigrateCommand(argv: string[]): Promise<void> {
   let outcome;
   try {
@@ -292,6 +413,7 @@ function printUsage(): void {
       "",
       "Subcommands:",
       "  reconcile [--config <path>] [flags] Reconcile governance policy against live GitLab.",
+      "  repos [flags]                        Write the policy's group's project list for chant --forge-repos.",
       "  migrate <path> [flags]               Translate GitHub Actions workflows to GitLab CI.",
       "",
       "Reconcile flags:",
@@ -305,6 +427,17 @@ function printUsage(): void {
       "  --removal-cap-fraction <f>    Max deletable fraction of each resource type's live entries, in (0, 1] (default 0.25).",
       "  --plan-json <file>            Write the plan as a chant change-set part (dry-run only).",
       "  --member <name>               Member the part names (default: the policy file's directory name).",
+      "",
+      "repos writes the policy's group's repository list, archived repos and the",
+      "subgroups' projects included, as the JSON `chant workspace check --forge-repos <file>` reads.",
+      "",
+      "Repos flags:",
+      "  --config <path>               Governance config, read as for reconcile (default governance.yml).",
+      "  --config-mode fold|run|check  How a .ts policy is evaluated (default: fold).",
+      "  --group <path>                Group to list (default: the policy's only top-level group; --org also works).",
+      "  --out <file>                  File to write (default: stdout).",
+      "  --base-url <url>              GitLab instance URL (default https://gitlab.com; or --base-url-env <VAR>).",
+      "  --token-env <VAR>             Env var holding the API token (default GITLAB_TOKEN).",
       "",
       "Migrate flags:",
       "  <path>                        One workflow file, or a directory (.github/workflows/).",
@@ -335,11 +468,15 @@ async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
     await runReconcileCommand(argv.slice(1));
     return;
   }
+  if (sub === "repos") {
+    await runReposCommand(argv.slice(1));
+    return;
+  }
   if (sub === "migrate") {
     await runMigrateCommand(argv.slice(1));
     return;
   }
-  die(2, `unknown subcommand: ${sub}. Known subcommands: reconcile, migrate.`);
+  die(2, `unknown subcommand: ${sub}. Known subcommands: reconcile, repos, migrate.`);
 }
 
 export async function run(argv: string[]): Promise<void> {
