@@ -135,9 +135,26 @@ The part's member is named by `--member`, or by the policy file's directory
 (`governance` above) when the flag is absent; without `--config`, that is the
 working directory's name, and a policy at the filesystem root needs
 `--member`. Its planner is `warden` and its lexicon `gitlab`. Each planned
-change is one entry with the address `<resourceType>.<key>` and the node's
-scope id (`group:acme/platform` or `project:acme/platform/api`) as its scope,
-and the member's `planDigest` covers every change set the run planned.
+change is one entry with the node's scope id (`group:acme/platform` or
+`project:acme/platform/api`) as its scope, and the member's `planDigest`
+covers every change set the run planned.
+
+An entry's address puts it on the same graph node as the drift reader's record
+for that change (see the README's
+[drift section](README.md#as-a-chant-workspace-member)). A change to a node's
+own state has the bare node id as its address. The settings type that matches
+the node's kind is its own state (`group-settings` for a group,
+`project-settings` for a project and `instance-settings` for an instance), and
+a protected branch or an integration is a node of its own
+(`protection/<project>/<branch>`, `app/<path>/<integration>`). Any other change has the address
+`<node id>#<resourceType>[<key>]`, such as `team/acme/platform#member[alice]`
+or `repo/acme/platform/api#variable[DEPLOY_KEY]`, and chant places it on the
+node before the `#`. Addresses carry the full path, so two groups that each
+have an `api` project give distinct ones. An instance's entries place on no
+node, since the graph does not draw an instance. A pending rename's change set
+runs under the old path but its entries address the declared node. Placing
+these addresses needs chant `0.124.97` or newer; an older chant leaves every
+entry off the graph.
 
 When a cycle errors or the request budget defers one, the plan is incomplete:
 the member's status is `failed`, its `planDigest` is `null` and its `error`

@@ -359,7 +359,7 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
   }
 
   if (args.planJson !== undefined) {
-    const part = planPart({ member: member!, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred });
+    const part = planPart({ member: member!, policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred });
     try {
       writeFileSync(args.planJson, `${JSON.stringify(part, null, 2)}\n`, "utf-8");
     } catch (err) {

@@ -21,7 +21,7 @@ import { ciVariablesCycle } from "../cycles/ci-variables.js";
 import { groupSettingsCycle } from "../cycles/group-settings.js";
 import { makeClient, type MockClient } from "../cycles/_testutil.js";
 import { readGovernance } from "../graph/reader.js";
-import { declaredNodes, driftAddress, driftAttributes, governanceDrift, readGovernanceDrift, type ReadGovernanceDriftDeps } from "./reader.js";
+import { declaredNodes, driftAddress, driftAttributes, governanceDrift, planEntryAddress, readGovernanceDrift, scopeNode, type ReadGovernanceDriftDeps } from "./reader.js";
 import type { GovernanceConfig } from "../config/types.js";
 import read from "./entry.js";
 
@@ -170,6 +170,57 @@ nodes:
     expect(driftAddress("project", "acme/platform/api", { resourceType: "push-rules", key: "push-rules" })).toBe("repo/acme/platform/api");
     expect(driftAddress("project", "acme/platform/api", { resourceType: "protected-branch", key: "main" })).toBe("protection/acme/platform/api/main");
     expect(driftAddress("instance", "gitlab.example.com", { resourceType: "system-hook", key: "https://x" })).toBe("instance/gitlab.example.com");
+  });
+});
+
+describe("planEntryAddress", () => {
+  it("is the bare node id for the node's own resource type", () => {
+    expect(planEntryAddress("group", "acme/platform", { resourceType: "group-settings", key: "group-settings" })).toBe("team/acme/platform");
+    expect(planEntryAddress("project", "acme/platform/api", { resourceType: "project-settings", key: "project-settings" })).toBe("repo/acme/platform/api");
+    expect(planEntryAddress("instance", "gitlab.example.com", { resourceType: "instance-settings", key: "instance-settings" })).toBe("instance/gitlab.example.com");
+    expect(planEntryAddress("project", "acme/platform/api", { resourceType: "protected-branch", key: "release/*" })).toBe("protection/acme/platform/api/release/*");
+    expect(planEntryAddress("group", "acme/platform", { resourceType: "integration", key: "slack" })).toBe("app/acme/platform/slack");
+  });
+
+  it("is <node id>#<resourceType>[<key>] for every other change on the node", () => {
+    expect(planEntryAddress("group", "acme/platform", { resourceType: "member", key: "alice" })).toBe("team/acme/platform#member[alice]");
+    expect(planEntryAddress("project", "acme/platform/api", { resourceType: "push-rules", key: "push-rules" })).toBe("repo/acme/platform/api#push-rules[push-rules]");
+    expect(planEntryAddress("project", "acme/platform/api", { resourceType: "variable", key: "DEPLOY_KEY" })).toBe("repo/acme/platform/api#variable[DEPLOY_KEY]");
+    expect(planEntryAddress("instance", "gitlab.example.com", { resourceType: "system-hook", key: "https://x" })).toBe("instance/gitlab.example.com#system-hook[https://x]");
+    // A settings type that is not the node's own is a change under it.
+    expect(planEntryAddress("group", "acme/platform", { resourceType: "project-settings", key: "project-settings" })).toBe("team/acme/platform#project-settings[project-settings]");
+  });
+
+  it("starts with the node id driftAddress gives, so chant places it on the drift record's node", () => {
+    const cases: Array<[Parameters<typeof driftAddress>[0], string, { resourceType: string; key: string }]> = [
+      ["group", "acme/platform", { resourceType: "member", key: "alice" }],
+      ["group", "acme/platform", { resourceType: "group-settings", key: "group-settings" }],
+      ["project", "acme/platform/api", { resourceType: "protected-branch", key: "main" }],
+      ["project", "acme/platform/api", { resourceType: "webhook", key: "https://hooks" }],
+    ];
+    for (const [kind, path, entry] of cases) expect(planEntryAddress(kind, path, entry).split("#")[0]).toBe(driftAddress(kind, path, entry));
+  });
+
+  it("keeps two groups' same-named projects apart", () => {
+    const entry = { resourceType: "variable", key: "TOKEN" };
+    expect(planEntryAddress("project", "acme/a/api", entry)).not.toBe(planEntryAddress("project", "acme/b/api", entry));
+    expect(planEntryAddress("project", "acme/a/api", { resourceType: "project-settings", key: "project-settings" })).not.toBe(
+      planEntryAddress("project", "acme/b/api", { resourceType: "project-settings", key: "project-settings" }),
+    );
+  });
+});
+
+describe("scopeNode", () => {
+  const policy = parse(`
+nodes:
+  acme/platform: { kind: group }
+  acme/platform/api-v2: { kind: project, previously: acme/platform/api }
+`) as GovernanceConfig;
+
+  it("is the scope's declared node, or the node a pending rename's old path names", () => {
+    expect(scopeNode(policy, "group:acme/platform")).toEqual({ kind: "group", path: "acme/platform" });
+    expect(scopeNode(policy, "project:acme/platform/api")).toEqual({ kind: "project", path: "acme/platform/api-v2" });
+    expect(scopeNode(policy, "project:acme/other")).toEqual({ kind: "project", path: "acme/other" });
   });
 });
 

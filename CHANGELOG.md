@@ -5,6 +5,16 @@ up to `0.6.1` are not recorded here.
 
 ## Unreleased
 
+- `reconcile --plan-json` gives each entry its `forge-governance` graph node id
+  as its address, so the part's entries place on the same nodes as the drift
+  reader's records (INTENTIUS/chant#5089). A change to the node's own state,
+  such as a group's `group-settings` or a protected branch, is addressed by the
+  bare node id. Any other change is addressed by
+  `<node id>#<resourceType>[<key>]`, such as `team/acme/platform#member[alice]`.
+  The address was `<resourceType>.<key>`, which two groups with a same-named
+  project could repeat in one part. The `@intentius/chant` and
+  `@intentius/chant-lexicon-*` range moves to `^0.124.97`, the first chant that
+  reads an entry's address.
 - README: the kind needs chant `0.124.96` or newer, not `0.124.49`. The kinds
   file's `drift` block is unknown to older chant, which drops the kind.
 

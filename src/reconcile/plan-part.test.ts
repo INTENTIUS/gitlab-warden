@@ -39,7 +39,7 @@ describe("planPart", () => {
     const result = await runReconcile({ config, client: client(), cycles: [membersCycle], mode: "dry-run" });
     expect(result.changeSets).toHaveLength(1);
 
-    const written = roundTrip(planPart({ member: "governance", changeSets: result.changeSets, errored: result.errored, deferred: result.deferred }));
+    const written = roundTrip(planPart({ member: "governance", policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred }));
     const part = readChangeSetPartFile(written, "warden", "governance", PLAN_PART_LEXICON);
 
     expect(part.member).toMatchObject({ member: "governance", lexicon: "gitlab", planner: "warden", scope: "group:acme/platform", status: "planned", holes: [] });
@@ -47,9 +47,9 @@ describe("planPart", () => {
     const actions = part.entries.map((e) => [e.action, e.address, e.scope, e.lexicon, e.member]);
     expect(actions).toEqual(
       expect.arrayContaining([
-        ["update", "member.alice", "group:acme/platform", "gitlab", "governance"],
-        ["create", "member.carol", "group:acme/platform", "gitlab", "governance"],
-        ["delete", "member.bob", "group:acme/platform", "gitlab", "governance"],
+        ["update", "team/acme/platform#member[alice]", "group:acme/platform", "gitlab", "governance"],
+        ["create", "team/acme/platform#member[carol]", "group:acme/platform", "gitlab", "governance"],
+        ["delete", "team/acme/platform#member[bob]", "group:acme/platform", "gitlab", "governance"],
       ]),
     );
     expect(part.entries).toHaveLength(3);
@@ -62,8 +62,8 @@ describe("planPart", () => {
   it("is deterministic: the same plan gives the same digest", async () => {
     const a = await runReconcile({ config, client: client(), cycles: [membersCycle], mode: "dry-run" });
     const b = await runReconcile({ config, client: client(), cycles: [membersCycle], mode: "dry-run" });
-    expect(planPart({ member: "m", changeSets: a.changeSets }).member.planDigest).toBe(
-      planPart({ member: "m", changeSets: b.changeSets }).member.planDigest,
+    expect(planPart({ member: "m", policy: config, changeSets: a.changeSets }).member.planDigest).toBe(
+      planPart({ member: "m", policy: config, changeSets: b.changeSets }).member.planDigest,
     );
   });
 
@@ -80,7 +80,7 @@ describe("planPart", () => {
     expect(result.errored).toHaveLength(1);
 
     const part = readChangeSetPartFile(
-      roundTrip(planPart({ member: "governance", changeSets: result.changeSets, errored: result.errored, deferred: result.deferred })),
+      roundTrip(planPart({ member: "governance", policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred })),
       "warden",
       "governance",
     );
@@ -92,7 +92,7 @@ describe("planPart", () => {
   });
 
   it("marks the member failed when the budget deferred a cycle", () => {
-    const part = planPart({ member: "m", changeSets: [], deferred: { skippedCycles: ["members"], skippedEntries: [] } });
+    const part = planPart({ member: "m", policy: config, changeSets: [], deferred: { skippedCycles: ["members"], skippedEntries: [] } });
     expect(part.member).toMatchObject({ status: "failed", planDigest: null, error: "members was deferred by the request budget" });
   });
 });

@@ -195,6 +195,11 @@ policy that does not load fails the read. `--resource <node id>` reads one decla
 reconciled alone); an undeclared one is refused with `no-drift-read`. `--read` other than `live-read`, and `--stack`,
 are refused with `read-unsupported`.
 
+The plan that `gitlab-warden reconcile --plan-json <file>` writes as a chant change-set part uses the same node ids. A
+change to a node's own state has the bare id as its address and any other change has `<node id>#<resourceType>[<key>]`,
+so chant places plan entries and drift records on the same nodes. The
+[CLI reference](CLI.md#plan-as-a-change-set-part) has the details.
+
 `gitlab-warden reconcile --drift-issue` builds the same records from a scheduled dry run and keeps one GitLab issue
 open while they show drift, closing it once GitLab matches the policy. The flags and the scheduled workflow for this issue are described in the CLI reference ([CLI.md](CLI.md#drift-issue)) and
 the CI guide ([CI.md](CI.md)).

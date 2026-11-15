@@ -91,6 +91,28 @@ export function driftAddress(kind: NodeKind, path: string, entry: Pick<ChangeSet
   }
 }
 
+/** The one change-set resource type that is a node's own state, by the node `driftAddress` gives. */
+function nodeOwnType(kind: NodeKind, address: string): string {
+  if (address.startsWith("protection/")) return "protected-branch";
+  if (address.startsWith("app/")) return "integration";
+  return kind === "group" ? "group-settings" : kind === "project" ? "project-settings" : "instance-settings";
+}
+
+/**
+ * A planned change's address in a `reconcile --plan-json` part
+ * (INTENTIUS/chant#5089), on the node its drift record names: the bare node
+ * id ({@link driftAddress}) when the entry's resource type is that node's own
+ * (a group's `group-settings`, a project's `project-settings`, an instance's
+ * `instance-settings`, a protected branch, an integration), and otherwise
+ * `<node id>#<resourceType>[<key>]`, which chant places on the node before the
+ * `#`. The node id carries the declared path, so two groups' same-named
+ * projects give distinct addresses.
+ */
+export function planEntryAddress(kind: NodeKind, path: string, entry: Pick<ChangeSetEntry, "resourceType" | "key">): string {
+  const node = driftAddress(kind, path, entry);
+  return entry.resourceType === nodeOwnType(kind, node) ? node : `${node}#${entry.resourceType}[${entry.key}]`;
+}
+
 /**
  * A planned change as attributes, in the drift record's direction (`before`
  * the declared value, `after` the live one): an update gives one per field
@@ -146,6 +168,12 @@ function declaredPath(policy: GovernanceConfig, scopeId: string): string {
   return renamed ? renamed[0] : path;
 }
 
+/** The declared node a change set's scope id stands for: its kind and declared path. */
+export function scopeNode(policy: GovernanceConfig, scopeId: string): { kind: NodeKind; path: string } {
+  const path = declaredPath(policy, scopeId);
+  return { kind: policy.nodes[path]?.kind ?? parseScope(scopeId).kind, path };
+}
+
 export interface GovernanceDriftInput {
   member: string;
   /** RFC 3339, given to every record. */
@@ -176,8 +204,7 @@ export function governanceDrift(input: GovernanceDriftInput): { start: DriftStar
 
   const attributes = new Map<string, DriftAttribute[]>();
   for (const cs of input.changeSets) {
-    const path = declaredPath(input.policy, cs.org);
-    const kind = input.policy.nodes[path]?.kind ?? parseScope(cs.org).kind;
+    const { kind, path } = scopeNode(input.policy, cs.org);
     for (const entry of cs.entries) {
       const address = driftAddress(kind, path, entry);
       if (!pathOf.has(address)) pathOf.set(address, path);
