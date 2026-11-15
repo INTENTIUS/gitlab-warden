@@ -27,7 +27,7 @@ import { createClient, DEFAULT_BASE_URL } from "./auth/client.js";
 import { forgeRepoList, pickGroup, policyGroups } from "./repos.js";
 import { runReconcile, type Cycle } from "./reconcile/runner.js";
 import { defaultMemberName, planPart } from "./reconcile/plan-part.js";
-import { driftRecords } from "./drift/reader.js";
+import { governanceDrift } from "./drift/reader.js";
 import {
   describeDriftIssue,
   driftIssueEnvironment,
@@ -386,7 +386,7 @@ async function runReconcileCommand(argv: string[]): Promise<void> {
   let driftIssueFailed = false;
   if (args.driftIssue) {
     const observedAt = new Date().toISOString();
-    const records = driftRecords({ member: member!, observedAt, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred, policy: config });
+    const { records } = governanceDrift({ member: member!, observedAt, policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred });
     const instance = baseUrl ?? DEFAULT_BASE_URL;
     const runUrl = driftIssueRunUrl();
     try {

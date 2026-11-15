@@ -8,23 +8,18 @@
  * changes, leaves it alone when the drift is the same or the read was
  * incomplete, and closes it when GitLab matches the policy again. The
  * records are the drift reader's (`./reader.ts`), so the issue and
- * `chant workspace drift` report the same thing.
+ * `chant workspace drift` report the same thing: a node with planned
+ * changes is `drifted`, which is drift under keepDriftIssue's default
+ * statuses.
  */
 
 import { keepDriftIssue, type DriftIssueResult, type DriftIssueWords } from "@intentius/chant/drift-issue";
-import type { DriftRecord, DriftStatus } from "@intentius/chant/drift-record";
+import type { DriftRecord } from "@intentius/chant/drift-record";
 import { forgeClient, type ForgeFetch, type PrForge } from "@intentius/chant/pr-forge";
 import type { GovernanceConfig } from "../config/types.js";
 
 /** The product name on the marker and the fingerprint. */
 export const DRIFT_ISSUE_PRODUCT = "gitlab-warden";
-
-/**
- * The statuses the issue counts as drift. chant's default (`drifted`,
- * `missing`) would leave out a declared member or branch GitLab lacks
- * (`pending`) and an owned one the policy does not declare (`undeclared`).
- */
-export const DRIFT_ISSUE_STATUSES: readonly DriftStatus[] = ["drifted", "missing", "pending", "undeclared"];
 
 type Env = Record<string, string | undefined>;
 
@@ -113,7 +108,6 @@ export function keepGovernanceDriftIssue(forge: Pick<PrForge, "trackIssue">, inp
     words: DRIFT_ISSUE_WORDS,
     environment: input.environment,
     records: input.records,
-    statuses: DRIFT_ISSUE_STATUSES,
     ...(input.runUrl ? { runUrl: input.runUrl } : {}),
     ...(input.observedAt ? { observedAt: input.observedAt } : {}),
   });

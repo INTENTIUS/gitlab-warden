@@ -54,7 +54,7 @@ describe("forge-governance kinds file", () => {
   test("names the drift reader chant workspace drift runs (chant 0.124.96)", () => {
     expect(kind.drift).toEqual({
       reader: "dist/drift-reader.mjs",
-      config: { dir: "{dir}", file: "governance.yml", tokenEnv: "GITLAB_TOKEN", baseUrlEnv: "GITLAB_BASE_URL" },
+      config: { dir: "{dir}", file: "governance.yml" },
     });
     expect(pkg.scripts["build:drift"]).toContain("--outfile=dist/drift-reader.mjs");
     expect(pkg.scripts.build).toContain("npm run build:drift");

@@ -12,7 +12,7 @@ import { membersCycle } from "../cycles/members.js";
 import { makeClient } from "../cycles/_testutil.js";
 import { runReconcile } from "../reconcile/runner.js";
 import type { GovernanceConfig } from "../config/types.js";
-import { driftRecords } from "./reader.js";
+import { governanceDrift } from "./reader.js";
 import { describeDriftIssue, driftIssueEnvironment, driftIssueForge, driftIssueProject, driftIssueRunUrl, isProjectRef, keepGovernanceDriftIssue, policyRoots } from "./issue.js";
 
 interface FakeIssue {
@@ -71,7 +71,7 @@ const config: GovernanceConfig = {
 async function recordsAt(level: number, extra: Array<{ id: number; username: string; access_level: number }> = []) {
   const client = makeClient({}, { "/groups/acme%2Fplatform/members": [{ id: 1, username: "alice", access_level: level }, ...extra] });
   const result = await runReconcile({ config, client, cycles: [membersCycle], mode: "dry-run" });
-  return driftRecords({ member: "governance", observedAt: "2026-11-14T12:00:00.000Z", changeSets: result.changeSets, errored: result.errored, deferred: result.deferred, policy: config });
+  return governanceDrift({ member: "governance", observedAt: "2026-11-14T12:00:00.000Z", policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred }).records;
 }
 
 const ENV = "gitlab.example.com/acme/platform";
@@ -92,7 +92,7 @@ describe("keepGovernanceDriftIssue", () => {
     const issue = f.issues[0];
     expect(issue.title).toBe("Governance drift on gitlab.example.com/acme/platform");
     expect(issue.description.startsWith("<!-- gitlab-warden:drift gitlab.example.com/acme/platform -->")).toBe(true);
-    expect(issue.description).toContain("| `member/acme/platform/alice` | drifted | `accessLevel`: declared `40`, live `30` |");
+    expect(issue.description).toContain("| `team/acme/platform` | drifted | `member[#alice].accessLevel`: declared `40`, live `30` |");
     expect(issue.description).toContain(`Found by ${runUrl}.`);
 
     // Twice with the same drift: still one issue, not edited.
@@ -104,8 +104,8 @@ describe("keepGovernanceDriftIssue", () => {
     const changed = await keepGovernanceDriftIssue(forge, { environment: ENV, records: await recordsAt(30, [{ id: 2, username: "bob", access_level: 30 }]) });
     expect(changed).toMatchObject({ action: "updated", number: 1 });
     expect(f.issues).toHaveLength(1);
-    // bob is on GitLab and owned but undeclared: drift for the issue too.
-    expect(f.issues[0].description).toContain("| `member/acme/platform/bob` | undeclared |");
+    // bob is on GitLab and owned but undeclared: another attribute on the drifted group.
+    expect(f.issues[0].description).toContain("`member[#bob]`");
 
     const closed = await keepGovernanceDriftIssue(forge, { environment: ENV, records: await recordsAt(40) });
     expect(closed).toMatchObject({ action: "closed", number: 1 });
@@ -126,7 +126,7 @@ describe("keepGovernanceDriftIssue", () => {
       throw new Error("GET members returned 500");
     };
     const result = await runReconcile({ config, client, cycles: [membersCycle], mode: "dry-run" });
-    const records = driftRecords({ member: "governance", observedAt: "2026-11-14T13:00:00.000Z", changeSets: result.changeSets, errored: result.errored, deferred: result.deferred, policy: config });
+    const { records } = governanceDrift({ member: "governance", observedAt: "2026-11-14T13:00:00.000Z", policy: config, changeSets: result.changeSets, errored: result.errored, deferred: result.deferred });
     expect(records[0]).toMatchObject({ status: "not-observed" });
     const left = await keepGovernanceDriftIssue(forge, { environment: ENV, records });
     expect(left.action).toBe("left");
@@ -135,13 +135,13 @@ describe("keepGovernanceDriftIssue", () => {
 });
 
 describe("the drift issue's target and environment", () => {
-  it("opens an issue for a declared member GitLab lacks (pending)", async () => {
+  it("opens an issue for a declared member GitLab lacks, a drifted group", async () => {
     const f = fakeGitLab("acme/governance");
     const forge = driftIssueForge({ baseUrl: "https://gitlab.example.com", project: "acme/governance", token: "t0ken", tokenEnv: "GITLAB_TOKEN", fetch: f.fetch });
     const client = makeClient({}, { "/groups/acme%2Fplatform/members": [] });
     const result = await runReconcile({ config, client, cycles: [membersCycle], mode: "dry-run" });
-    const records = driftRecords({ member: "governance", observedAt: "2026-11-14T12:00:00.000Z", changeSets: result.changeSets, policy: config });
-    expect(records).toEqual([expect.objectContaining({ address: "member/acme/platform/alice", status: "pending" })]);
+    const { records } = governanceDrift({ member: "governance", observedAt: "2026-11-14T12:00:00.000Z", policy: config, changeSets: result.changeSets });
+    expect(records).toEqual([expect.objectContaining({ address: "team/acme/platform", status: "drifted", attributes: [{ path: "member[#alice]", before: expect.anything() }] })]);
     expect((await keepGovernanceDriftIssue(forge, { environment: ENV, records })).action).toBe("opened");
   });
 
