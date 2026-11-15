@@ -30,7 +30,7 @@ into `~/.claude/skills/`. Then paste this prompt, filling in the placeholders:
 
 ```text
 Use the gitlab-warden skill to help me set up governance for my GitLab group
-<GROUP_PATH> on <GITLAB_URL>. Author a governance.yaml nodes: policy for the
+<GROUP_PATH> on <GITLAB_URL>. Author a governance.yml nodes: policy for the
 groups and projects I care about (ask me which slices matter), then run a
 dry-run reconcile and walk me through the plan. Do not apply anything.
 ```
@@ -54,7 +54,7 @@ no clone at all:
 
 ```bash
 # Dry-run: reads only, prints a plan, changes nothing.
-npx @intentius/gitlab-warden reconcile --config governance.yaml --token-env GITLAB_TOKEN --mode dry-run
+npx @intentius/gitlab-warden reconcile --config governance.yml --token-env GITLAB_TOKEN --mode dry-run
 ```
 
 The npm package is also what your pipeline installs later (the
@@ -109,14 +109,14 @@ instance; the e2e runs CE).
 
 ```sh
 npx @intentius/gitlab-warden reconcile \
-  --config governance.yaml \
+  --config governance.yml \
   --mode dry-run \
   --token-env GITLAB_TOKEN \
   --base-url https://gitlab.example.com   # omit for gitlab.com
 ```
 
 ```yaml
-# governance.yaml — declared nodes, keyed by full path
+# governance.yml — declared nodes, keyed by full path
 nodes:
   acme/platform:
     kind: group
@@ -151,17 +151,53 @@ as a member, so `chant workspace ls` and `chant workspace graph` list the policy
 The kind is data in `workspace-kinds.json`, exported at `@intentius/gitlab-warden/workspace-kinds`. chant reads it without
 importing the package.
 
+The kind needs chant `>= 0.124.49`: its `memberFile` arrived in `0.124.48` and its `graph.reader` in `0.124.49`, and an
+older chant drops the kind with `WSP002`. `npm test` validates `workspace-kinds.json` against chant's
+`workspace-kinds.schema.json`, and the graph the reader draws for a sample policy against chant's graph schema.
+
 | Part | Value |
 |---|---|
-| Probe | `governance.yaml` directly in the member's directory |
-| Member file | `governance.yaml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012` |
+| Probe | `governance.yml`, or the older `governance.yaml`, directly in the member's directory |
+| Member file | `governance.yml` must pass `schemas/governance.schema.json`. `chant workspace check` reports a missing file, a file that does not parse, or a field the schema does not know as `WSP012`, so a member that still has `governance.yaml` gets `WSP012` until the file is renamed |
 | Outputs | `repos`, the project nodes in `nodes`, and `teams`, the group nodes in `nodes`, for [member links](https://intentius.io/chant/reference/workspace-declaration/#member-links) |
-| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yaml` into graph IR with no GitLab call. A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared; drift colouring needs a live read and is not part of it. Needs a chant that has [chant#4413](https://github.com/INTENTIUS/chant/issues/4413) |
+| Graph | `graph.reader` names `dist/graph-reader.mjs`, which turns `governance.yml` into graph IR with no GitLab call (a member with only `governance.yaml` is read with a deprecation note on stderr). A group is a team and a project is a repo. Nodes are the top-level namespace as the org, the groups, the projects, each project's `protectedBranches` entries and each `integrations` entry as an app. Edges run from a group to the projects and subgroups below it, from a rule to its project and from an app to the group or project it is on. GitLab has push rules rather than rulesets, so there are no ruleset nodes. It draws the policy as declared, with no live state |
+| Drift | `drift.reader` names `dist/drift-reader.mjs`, which `chant workspace drift --member <name>` runs. See [Drift in a chant workspace](#drift-in-a-chant-workspace) |
 
 The schema is stricter than the loader: the loader drops a field it does not know, and the schema refuses it, so a
-misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged. A member kind with a
-`memberFile` needs a chant that has [chant#3672](https://github.com/INTENTIUS/chant/issues/3672); an older chant
-fails the kinds file with `WSP002`.
+misspelled field fails `chant workspace check` before a reconcile silently leaves it unmanaged.
+
+### Drift in a chant workspace
+
+`chant workspace drift --member <name>` reads a governance member through the kind's drift reader, which needs chant
+`>= 0.124.96` (`KIND_DRIFT_READER_FLOOR`); an older chant can't read the kinds file's `drift` block. The reader loads
+the member's `governance.yml`, falling back to `governance.yaml` with a deprecation note and then to `governance.ts`.
+Every cycle runs as a dry-run reconcile against GitLab, so the reader reads and never writes. It answers with chant's drift stream, engine
+`warden`, read `live-read`. It runs inside chant's process and takes its credentials from the environment: the token
+from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, defaulting to `https://gitlab.com`.
+
+There is one record per node the policy declares, at the graph reader's node id (`team/<group>`, `repo/<project>`,
+`protection/<project>/<branch>`, `app/<path>/<integration>`), so chant colours the member's graph; an instance node,
+which the graph does not draw, is `instance/<path>`. A node with no planned change under it is `in-sync`. A node with
+planned changes is `drifted`, each change one attribute: an update gives `<type>[#<key>].<field>` with `before` the
+declared value and `after` GitLab's. A create gives `<type>[#<key>]` with the declared value and a delete gives
+`<type>[#<key>]` with the live one (`group-settings.<field>` and `project-settings.<field>` stand for a node's own
+settings). Members and variables count under their group, project or instance, and hooks, push rules and the
+other per-node settings follow the same rule. A protected branch and an integration are nodes of their own. A change under a node the graph does not draw (an owned protected
+branch the policy does not declare) is a `drifted` record of its own. Variables, hooks and integrations carry no values, and neither do
+deploy keys or tokens (`sensitive: true`).
+
+A cycle that fails leaves its node's records `not-observed` with reason `read-failed` (or `drifted` with the failure
+noted, where another cycle found drift), and a cycle the request budget skipped leaves every record `not-observed`
+with reason `not-reached`, so a read that did not finish never reads as clean.
+
+If the token is missing or the member has no policy, the read is refused with `no-drift-read`, and no call reaches GitLab. A
+policy that does not load fails the read. `--resource <node id>` reads one declared node (its group or project is
+reconciled alone); an undeclared one is refused with `no-drift-read`. `--read` other than `live-read`, and `--stack`,
+are refused with `read-unsupported`.
+
+`gitlab-warden reconcile --drift-issue` builds the same records from a scheduled dry run and keeps one GitLab issue
+open while they show drift, closing it once GitLab matches the policy. The flags and the scheduled workflow for this issue are described in the CLI reference ([CLI.md](CLI.md#drift-issue)) and
+the CI guide ([CI.md](CI.md)).
 
 ## Tests
 

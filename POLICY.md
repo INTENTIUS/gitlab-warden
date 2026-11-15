@@ -5,7 +5,13 @@ The policy is the foundation of this tool: one YAML file with a single top-level
 (optionally) the self-managed instance you govern. Everything else (the CLI, the
 cycles, the guardrails) serves the policy. It is the one file you must author.
 
-- Loaded via `--config governance.yaml` (YAML, or JSON if the path ends in `.json`).
+- Loaded from `governance.yml` in the working directory, or the path `--config`
+  names. The format follows the extension: JSON for `.json`, a TypeScript
+  policy for `.ts` (see [A policy in TypeScript](#a-policy-in-typescript)),
+  and YAML otherwise. A
+  policy still named `governance.yaml` is read with a deprecation note on
+  stderr; rename it to `governance.yml`. Without `--config` and with neither
+  YAML file present, `governance.ts` in the working directory is read.
 - Schema (authoritative): `src/config/types.ts`.
 - A **node** is one declared group or project (or the instance), keyed by full
   path (`acme/platform` is a group, `acme/platform/api` a project). Each node
@@ -57,7 +63,7 @@ Three behaviors worth knowing before you write one:
   which is a different API and out of scope). The rename PUT sends the
   `path` alone, so a hand-curated display name survives; only a group whose
   policy manages the name (`groupSettings.name`) gets that managed value
-  sent alongside. One limitation: a pending group rename with declared
+  sent alongside. A pending group rename with declared
   descendant nodes takes two runs — this run's descendant scopes are
   addressed by their declared paths, which only exist once the rename
   (applied last) lands, so the run flags the sequence with a NOTE; apply the
@@ -99,7 +105,7 @@ Copy this, delete what you don't need, and edit it. Every field from
 slice and mark tier requirements.
 
 ```yaml
-# governance.yaml — one top-level key: nodes, a map keyed by full path.
+# governance.yml — one top-level key: nodes, a map keyed by full path.
 nodes:
 
   # ========== a group node ==========
@@ -600,6 +606,65 @@ delete + re-create.
 Instance variables in **`instanceVariables[]`** look like `variables[]`
 without a meaningful `environmentScope`, and they live at
 `/admin/ci/variables`.
+
+## A policy in TypeScript
+
+The policy can also be a `.ts` file whose default export is the policy object
+(`export const policy = ...` is accepted too). Type it with
+`satisfies GovernanceConfig`, imported from `@intentius/gitlab-warden`, and an
+editor completes the field names and flags a misspelt one. A function written
+in the same file, or imported from a `.ts` file beside it, can set several
+fields from one argument. `examples/governance.ts` applies a review preset to
+two projects:
+
+```ts
+import type { GovernanceConfig } from "@intentius/gitlab-warden";
+
+const reviewPreset = (review: { approvals: number; linear: boolean }) => ({
+  projectSettings: {
+    mergeMethod: review.linear ? "ff" : "merge",
+    squashOption: review.linear ? ("always" as const) : ("default_off" as const),
+    onlyAllowMergeIfPipelineSucceeds: true,
+    removeSourceBranchAfterMerge: true,
+  },
+  protectedBranches: [{ name: "main", pushAccessLevel: 0, mergeAccessLevel: 40, allowForcePush: false }],
+  approvalRules: [{ name: "review", approvalsRequired: review.approvals }],
+});
+
+const api = reviewPreset({ approvals: 2, linear: true });
+
+export default {
+  nodes: {
+    "acme/api": {
+      kind: "project",
+      ...api,
+      projectSettings: { ...api.projectSettings, topics: ["service", "api"] },
+    },
+    // ...
+  },
+} satisfies GovernanceConfig;
+```
+
+`examples/governance.yml` is the same policy with every field written out, and
+the two plan identically.
+
+By default warden folds the file to its value with `@intentius/tsad-reference`
+and does not run it, so the plan depends on the file and nothing else. A file
+that is code rather than data is refused with exit 2 and the line and column of
+the part that cannot be folded. One that reads `process.env` is an example
+(`examples/not-data.ts`). The `--config-mode` flag alters this. With `run` the
+tool imports the file and takes whatever it exports, and with `check` it folds
+and runs the file and exits 2 if the two values differ (see [CLI.md](CLI.md#reconcile-flags)). Either way a
+property whose value is `undefined` counts as absent, the same as leaving it
+out of the YAML, so selective-by-omission holds.
+
+When a field set by the preset drifts, the plan names the preset argument and
+the line it is on; a field written on the node itself is reported as `direct`
+(see [CLI.md](CLI.md#where-a-drifted-field-was-written)). A YAML or JSON
+policy, or a `.ts` policy loaded with `--config-mode run`, has no such lines.
+
+The `forge-governance` workspace kind still checks and graphs `governance.yml`
+only; a member whose policy is `governance.ts` is not probed as that kind.
 
 ## What a reconcile does with this file
 

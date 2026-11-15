@@ -30,8 +30,10 @@ import {
 } from "@intentius/chant/reconcile";
 import type {
   Cycle as CoreCycle,
+  CycleResult,
   ReconcileResult,
   DiffOptions,
+  ChangeSet,
 } from "@intentius/chant/reconcile";
 import type { GitLabClient } from "../auth/client.js";
 import { encodeId } from "../auth/client.js";
@@ -41,6 +43,7 @@ import { diff } from "./diff.js";
 import type { NodeRenameIntent } from "./diff.js";
 import { drainPlanNotes, isNotFound, notePlan } from "../cycles/_shared.js";
 import { makeNodeRenameCycle } from "../cycles/node-rename.js";
+import { annotatePlan, driftOrigins, type DriftOrigin, type PolicyProvenance } from "./origin.js";
 
 export { BudgetExhaustedError } from "@intentius/chant/reconcile";
 export type {
@@ -84,7 +87,22 @@ export interface RunReconcileOptions<TScope = unknown> {
   requestBudget?: number;
   /** Max fraction of pre-existing entries deletable in one apply. Default 0.25. */
   removalDeltaCapFraction?: number;
+  /** Where each policy field was written, from a folded `.ts` policy. When given, each drifted field's origin is written under its plan line and returned on the cycle result. */
+  provenance?: PolicyProvenance;
 }
+
+/** A cycle's result, with the origin of each drifted field when the policy was folded. */
+export type WardenCycleResult = CycleResult & { origins?: DriftOrigin[] };
+
+/**
+ * warden's reconcile result: chant's, with origins on each cycle when the
+ * policy was folded, and every change set the run diffed (one per cycle and
+ * scope, in run order).
+ */
+export type WardenReconcileResult = Omit<ReconcileResult, "cycles"> & {
+  cycles: WardenCycleResult[];
+  changeSets: ChangeSet[];
+};
 
 /** A pending node rename, resolved from a node's `previously:` alias. */
 export interface PendingNodeRename {
@@ -231,7 +249,7 @@ function ownedPredicate(owned: NodeConfig["owned"]): DiffOptions["isOwned"] {
  */
 export async function runReconcile<TScope = unknown>(
   opts: RunReconcileOptions<TScope>,
-): Promise<ReconcileResult> {
+): Promise<WardenReconcileResult> {
   const maxFraction = opts.removalDeltaCapFraction ?? 0.25;
 
   // Resolve `previously:` aliases first — scopes are built from node keys, so
@@ -296,6 +314,10 @@ export async function runReconcile<TScope = unknown>(
     );
   }
 
+  // The core runner renders each plan from the change set the diff returns
+  // and pushes exactly one cycle result per diff call, in order, so the k-th
+  // change set kept here is the k-th result's.
+  const changeSets: ChangeSet[] = [];
   const result = await coreRunReconcile<GitLabClient, NodeConfig, LiveNodeState, TScope>({
     client: opts.client,
     scopes,
@@ -308,7 +330,9 @@ export async function runReconcile<TScope = unknown>(
       // declaration from there — `desired` is a cycle's buildDesired output
       // and may not carry it.
       const isOwned = dopts.isOwned ?? ownedPredicate(scopes[scopeId]?.owned);
-      return diff(scopeId, desired, live, { ...dopts, isOwned });
+      const cs = diff(scopeId, desired, live, { ...dopts, isOwned });
+      changeSets.push(cs);
+      return cs;
     },
     // The change set carries its own per-type live denominators
     // (`managedCounts`, stamped by `diff()`), so the cap needs only the
@@ -332,15 +356,27 @@ export async function runReconcile<TScope = unknown>(
     });
   }
 
+  // Where each drifted field was written, under its plan line, before the
+  // NOTE lines below are appended. Only a folded `.ts` policy carries it.
+  const provenance = opts.provenance;
+  const cycleResults: WardenCycleResult[] = provenance
+    ? result.cycles.map((cr, i) => {
+        const cs = changeSets[i];
+        if (!cs) return cr;
+        const origins = driftOrigins(cs, opts.config, provenance);
+        return { ...cr, plan: annotatePlan(cr.plan, origins), origins };
+      })
+    : result.cycles;
+
   // Surface caveats recorded by cycles during fetchLive (tier-gated reads,
   // shadowed live entries, …) as NOTE lines on the owning cycle's plan — an
   // optimistic or partial plan should not look like a clean one.
   for (const note of drainPlanNotes()) {
-    const cr = result.cycles.find((c) => c.name === note.cycle && c.org === note.scopeId);
+    const cr = cycleResults.find((c) => c.name === note.cycle && c.org === note.scopeId);
     if (cr) {
       cr.plan += `\nNOTE: ${note.message}`;
     }
   }
 
-  return result;
+  return { ...result, cycles: cycleResults, changeSets };
 }

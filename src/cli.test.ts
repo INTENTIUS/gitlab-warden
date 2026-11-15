@@ -2,9 +2,8 @@ import { describe, it, expect } from "vitest";
 import { parseReconcileArgs, CliError } from "./cli.js";
 
 describe("parseReconcileArgs", () => {
-  it("requires --config", () => {
-    expect(() => parseReconcileArgs([])).toThrow(CliError);
-    expect(() => parseReconcileArgs([])).toThrow(/--config is required/);
+  it("leaves --config unset when it is not given (governance.yml is the default)", () => {
+    expect(parseReconcileArgs([]).config).toBeUndefined();
   });
 
   it("defaults mode to dry-run and token env to GITLAB_TOKEN", () => {
@@ -30,10 +29,57 @@ describe("parseReconcileArgs", () => {
     });
   });
 
+  it("parses --plan-json and --member, refusing --plan-json with --mode apply and --member without --plan-json", () => {
+    const a = parseReconcileArgs([]);
+    expect(a.planJson).toBeUndefined();
+    expect(a.member).toBeUndefined();
+    const b = parseReconcileArgs(["--plan-json", "plan.json", "--member", "gov"]);
+    expect(b.planJson).toBe("plan.json");
+    expect(b.member).toBe("gov");
+    const bad = (argv: string[]) => expect(() => parseReconcileArgs(argv)).toThrow(expect.objectContaining({ code: 2 }));
+    bad(["--plan-json"]);
+    bad(["--plan-json", "plan.json", "--member"]);
+    bad(["--mode", "apply", "--plan-json", "plan.json"]);
+    bad(["--member", "gov"]);
+    bad(["--plan-json", "plan.json", "--member", ""]);
+  });
+
+  it("parses --drift-issue and --drift-issue-repo, dry-run only, and lets --member name the issue's member", () => {
+    expect(parseReconcileArgs([])).toMatchObject({ driftIssue: false, driftIssueRepo: undefined });
+    expect(parseReconcileArgs(["--drift-issue"])).toMatchObject({ driftIssue: true, driftIssueRepo: undefined });
+    expect(parseReconcileArgs(["--drift-issue", "--drift-issue-repo", "acme/governance", "--member", "gov"])).toMatchObject({
+      driftIssue: true,
+      driftIssueRepo: "acme/governance",
+      member: "gov",
+    });
+    const bad = (argv: string[], msg: RegExp) => expect(() => parseReconcileArgs(argv)).toThrow(expect.objectContaining({ code: 2, message: expect.stringMatching(msg) }));
+    bad(["--mode", "apply", "--drift-issue"], /cannot be combined with --mode apply/);
+    bad(["--drift-issue-repo", "acme/governance"], /give it with --drift-issue/);
+    bad(["--drift-issue", "--drift-issue-repo"], /requires a value/);
+    bad(["--drift-issue", "--drift-issue-repo", "governance"], /full path \(group\/project\) or id/);
+    bad(["--drift-issue", "--cycles", "members"], /cannot be combined with --cycles/);
+    bad(["--member", "gov"], /give it with --plan-json or --drift-issue/);
+  });
+
   it("rejects an unknown flag, bad mode, and missing value", () => {
     expect(() => parseReconcileArgs(["--config", "g", "--nope"])).toThrow(/unknown flag/);
     expect(() => parseReconcileArgs(["--config", "g", "--mode", "yolo"])).toThrow(/--mode must be/);
     expect(() => parseReconcileArgs(["--config"])).toThrow(/--config requires a value/);
+  });
+
+  it("--config-mode defaults to fold and takes fold, run or check, as in forgejo-warden", () => {
+    expect(parseReconcileArgs([]).configMode).toBe("fold");
+    for (const m of ["fold", "run", "check"] as const) {
+      expect(parseReconcileArgs(["--config", "governance.ts", "--config-mode", m]).configMode).toBe(m);
+    }
+    expect(() => parseReconcileArgs(["--config-mode", "eval"])).toThrow(/--config-mode must be "fold", "run" or "check", got: eval/);
+    expect(() => parseReconcileArgs(["--config-mode"])).toThrow(/got: \(missing\)/);
+    try {
+      parseReconcileArgs(["--config-mode", "eval"]);
+    } catch (err) {
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).code).toBe(2);
+    }
   });
 
   it("parses --removal-cap-fraction and validates the (0, 1] range at exit 2", () => {

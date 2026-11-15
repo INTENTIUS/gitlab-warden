@@ -18,7 +18,7 @@
  */
 
 const API_PATH = "/api/v4";
-const DEFAULT_BASE_URL = "https://gitlab.com";
+export const DEFAULT_BASE_URL = "https://gitlab.com";
 const USER_AGENT = "gitlab-warden (+https://github.com/INTENTIUS/gitlab-warden)";
 
 /** Error from a GitLab API request. The message embeds the status code so cycles

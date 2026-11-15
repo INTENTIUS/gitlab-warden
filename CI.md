@@ -28,7 +28,7 @@ stages: [governance]
 
 .warden:
   stage: governance
-  image: node:22
+  image: node:24
   variables:
     GIT_DEPTH: "1"
 
@@ -39,7 +39,7 @@ governance:plan:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode dry-run
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
@@ -51,7 +51,7 @@ governance:apply:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode apply
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
@@ -65,11 +65,37 @@ governance:drift:
     - if: $CI_PIPELINE_SOURCE == "schedule"
   script:
     - npx @intentius/gitlab-warden reconcile
-        --config governance.yaml
+        --config governance.yml
         --mode apply
         --base-url-env CI_SERVER_URL
         --token-env WARDEN_TOKEN
 ```
+
+Scheduled drift report (one tracking issue instead of a job log):
+
+```yaml
+# Build > Pipeline schedules, e.g. nightly. Plans only; keeps one issue in
+# this project open while GitLab differs from the policy and closes it once
+# they match again. WARDEN_TOKEN needs the api scope on this project too.
+governance:drift-issue:
+  extends: .warden
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - npx @intentius/gitlab-warden reconcile
+        --config governance.yml
+        --mode dry-run
+        --drift-issue
+        --base-url-env CI_SERVER_URL
+        --token-env WARDEN_TOKEN
+```
+
+The issue lives in the pipeline's own project (`CI_PROJECT_PATH`); pass
+`--drift-issue-repo <group/project>` to keep it elsewhere on the same
+instance. Use it in place of the scheduled apply above when drift should be
+reviewed rather than corrected, or beside it on a different schedule.
+`--drift-issue` reads the whole policy, so it does not take `--cycles`. See
+[CLI.md](CLI.md#drift-issue).
 
 Notes:
 
@@ -93,7 +119,7 @@ artifacts for review.
 ```yaml
 migrate:translate:
   stage: governance
-  image: node:22
+  image: node:24
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
       changes: [".github/workflows/*"]
@@ -136,7 +162,7 @@ jobs:
         with: { node-version: 22 }
       - run: >
           npx @intentius/gitlab-warden reconcile
-          --config governance.yaml
+          --config governance.yml
           --mode ${{ github.event_name == 'pull_request' && 'dry-run' || 'apply' }}
           --base-url https://gitlab.example.com
           --token-env GITLAB_TOKEN
