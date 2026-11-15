@@ -58,3 +58,11 @@ up to `0.6.1` are not recorded here.
   `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, and refuses with
   `no-drift-read` without a token. It needs chant 0.124.96 or later. See
   [README.md](README.md#drift-in-a-chant-workspace).
+- `reconcile --drift-issue` keeps one GitLab issue tracking the drift a dry
+  run finds, through chant's `keepDriftIssue`: opened on drift, left as it is
+  while the drift is the same or the read was incomplete, updated when it
+  changes, closed when GitLab matches the policy. The issue lives in
+  `--drift-issue-repo <group/project>` or `CI_PROJECT_PATH` and lists the
+  drift reader's records. It cannot be combined with `--mode apply` or
+  `--cycles`, and `--member` now names its records too. See
+  [CLI.md](CLI.md#drift-issue) and [CI.md](CI.md).

@@ -71,6 +71,32 @@ governance:drift:
         --token-env WARDEN_TOKEN
 ```
 
+Scheduled drift report (one tracking issue instead of a job log):
+
+```yaml
+# Build > Pipeline schedules, e.g. nightly. Plans only; keeps one issue in
+# this project open while GitLab differs from the policy and closes it once
+# they match again. WARDEN_TOKEN needs the api scope on this project too.
+governance:drift-issue:
+  extends: .warden
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+  script:
+    - npx @intentius/gitlab-warden reconcile
+        --config governance.yml
+        --mode dry-run
+        --drift-issue
+        --base-url-env CI_SERVER_URL
+        --token-env WARDEN_TOKEN
+```
+
+The issue lives in the pipeline's own project (`CI_PROJECT_PATH`); pass
+`--drift-issue-repo <group/project>` to keep it elsewhere on the same
+instance. Use it in place of the scheduled apply above when drift should be
+reviewed rather than corrected, or beside it on a different schedule.
+`--drift-issue` reads the whole policy, so it does not take `--cycles`. See
+[CLI.md](CLI.md#drift-issue).
+
 Notes:
 
 - A guardrail block exits 1 and fails the apply job, which is the intended
