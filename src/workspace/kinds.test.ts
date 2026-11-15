@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, test, expect } from "vitest";
@@ -17,6 +18,12 @@ const kinds = readJson("workspace-kinds.json");
 const kind = kinds.kinds[0];
 const schema = readJson(kind.memberFile.schema);
 const validate = new Ajv2020({ allErrors: true, strict: false }).compile(schema);
+
+// chant's own schema for a kinds file, as published at its
+// ./workspace/*.schema.json subpath. memberFile needs chant 0.124.48 and
+// graph.reader 0.124.49; an older chant drops the kind with WSP002.
+const kindsSchemaPath = createRequire(import.meta.url).resolve("@intentius/chant/workspace/workspace-kinds.schema.json");
+const validateKinds = new Ajv2020({ allErrors: true, strict: false }).compile(JSON.parse(readFileSync(kindsSchemaPath, "utf-8")));
 
 const sample = parseYaml(`
 nodes:
@@ -42,6 +49,10 @@ describe("forge-governance kinds file", () => {
     expect(kind.precedence).toBeLessThan(500);
     expect(kind.outputs).toEqual(["repos", "teams"]);
     expect(kind.graph.reader).toBe("dist/graph-reader.mjs");
+  });
+
+  test("passes chant's workspace-kinds schema", () => {
+    expect(validateKinds(kinds), JSON.stringify(validateKinds.errors)).toBe(true);
   });
 
   test("probes for the file it checks", () => {

@@ -11,7 +11,8 @@ up to `0.6.1` are not recorded here.
   `schemas/governance.schema.json`. The kind's graph reader
   (`dist/graph-reader.mjs`) gives `chant workspace graph` the groups, projects,
   protected branches and integrations the policy declares. See
-  [README.md](README.md#as-a-chant-workspace-member).
+  [README.md](README.md#as-a-chant-workspace-member). The kind needs chant
+  0.124.49 or later.
 - The `@intentius/chant`, `@intentius/chant-lexicon-gitlab` and
   `@intentius/chant-lexicon-github` range moves from `^0.72.1` to `^0.124.95`.
   `migrate` now turns a GitHub matrix flow sequence such as `[ubuntu, debian]`
