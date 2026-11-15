@@ -151,8 +151,9 @@ The drift reader `chant workspace drift --member <name>` runs for a
 (chant 0.124.96 or later). It reads the member's `governance.yml` and runs
 the same plan `reconcile --mode dry-run` prints, with every cycle, the token
 from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL` (default
-`https://gitlab.com`). It never applies. The records it returns are described
-in [README.md](README.md#drift-in-a-chant-workspace).
+`https://gitlab.com`). It never applies. Each planned change is one drift
+record; [README.md](README.md#drift-in-a-chant-workspace) lists the
+addresses and statuses.
 
 ## repos
 

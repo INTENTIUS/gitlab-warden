@@ -2,28 +2,20 @@
  * The drift reader for a forge-governance member (INTENTIUS/chant#5068,
  * INTENTIUS/gitlab-warden#74).
  *
- * `chant workspace drift --member <name>` calls the module `drift.reader`
- * names in workspace-kinds.json (`./entry.ts`), and the module calls
- * {@link readGovernanceDrift} here. It runs every cycle as a dry-run
- * reconcile (no write, ever) and turns the plan into one drift stream: a
- * `drift-start`, a `drift-record` per address and a `drift-settle`, the
- * answer `@intentius/chant/workspace/drift-reader` defines.
+ * `chant workspace drift --member <name>` imports `dist/drift-reader.mjs`
+ * (`./entry.ts`) for a member of the `forge-governance` kind and calls it
+ * with the member's directory. The reader loads the member's policy, runs
+ * every registered cycle in dry-run against GitLab, and turns the planned
+ * changes into drift stream lines: a start, one record per planned change,
+ * and a settle. It never applies anything. The shape is forgejo-warden's
+ * (forgejo-warden#46), with GitLab's addresses.
  *
- * Addresses are the graph reader's node ids (`./graph/reader.ts`), because
- * chant places a `warden` record on the member's graph by its address:
- * `team/<group path>`, `repo/<project path>`, `protection/<project
- * path>/<branch>` for a declared protected branch and `app/<path>/<name>`
- * for a declared integration. An instance node has no graph node and reads
- * as `instance/<path>`. Every planned change lands on one of them, so a
- * node's record lists each change under it as an attribute: `drifted` with
- * attributes when the plan changes anything there, `in-sync` when nothing,
- * and `not-observed` (reason `read-failed`) when a cycle errored at the node
- * or the request budget skipped a cycle (reason `not-reached`). A node that
- * drifted and also had a cycle fail is `drifted` with `attributesUnobserved`,
- * so an incomplete read never reads as no drift.
+ * `reconcile --drift-issue` builds its records with {@link driftRecords}
+ * too, so the drift issue and `chant workspace drift` report the same thing.
  */
 
-import type { ChangeSetEntry } from "@intentius/chant/reconcile";
+import { existsSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import {
   driftRecord,
   driftRecordLine,
@@ -31,207 +23,238 @@ import {
   driftStart,
   type DriftAttribute,
   type DriftEvidence,
-  type DriftExpected,
+  type DriftLine,
   type DriftRecord,
-  type DriftUnobserved,
-  type ReadDriftResult,
+  type DriftStatus,
 } from "@intentius/chant/drift-record";
-import type { GitLabClient } from "../auth/client.js";
-import type { GovernanceConfig, NodeConfig } from "../config/types.js";
+import type { DriftReaderInput, DriftReaderOutput } from "@intentius/chant/workspace/drift-reader";
+import type { ChangeSet, ChangeSetEntry, CycleError, DeferredWork } from "@intentius/chant/reconcile";
+import { createClient, DEFAULT_BASE_URL, type GitLabClient } from "../auth/client.js";
+import { CYCLE_REGISTRY } from "../cli/registry.js";
+import { loadGovernancePolicy } from "../config/load.js";
+import { deprecationNote, POLICY_FILE, resolvePolicyPath, TS_POLICY_FILE } from "../config/policy-path.js";
+import type { GovernanceConfig } from "../config/types.js";
 import { parseScope, runReconcile, type Cycle } from "../reconcile/runner.js";
+import pkg from "../../package.json" with { type: "json" };
 
-/** Who wrote the records, on every record and on the start line. */
-export const DRIFT_TOOL = "gitlab-warden";
+/** The engine a warden's records name. */
+export const DRIFT_ENGINE = "warden" as const;
+/** The read a warden answers: its reconcile plan, what the next apply would change. */
+export const DRIFT_READ = "plan" as const;
+/** The env vars the reader takes its credentials from, unless the kind's config names others. */
+export const DEFAULT_TOKEN_ENV = "GITLAB_TOKEN";
+export const DEFAULT_BASE_URL_ENV = "GITLAB_BASE_URL";
+
+/** What every record and the start line say produced them. */
+export function driftEvidence(): DriftEvidence {
+  return { tool: "gitlab-warden", version: pkg.version, command: "reconcile --mode dry-run" };
+}
 
 /**
  * Change-set resource types whose values can carry a secret (a variable's
  * value, a hook's URL or token, an integration's properties, key and token
- * material). Their attributes keep their path and lose both values.
+ * material). chant redacts by key name only, and `value` is not one of its
+ * names, so an update's attributes of these types keep the path and lose
+ * both values.
  */
-const SECRET_TYPES = new Set([
-  "variable",
-  "instance-variable",
-  "webhook",
-  "system-hook",
-  "integration",
-  "deploy-key",
-  "deploy-token",
-  "access-token",
-]);
-
-export interface GovernanceDriftInput {
-  config: GovernanceConfig;
-  client: GitLabClient;
-  cycles: Cycle[];
-  /** The workspace member every line names. */
-  member: string;
-  /** RFC 3339, every record's `observedAt`. */
-  observedAt: string;
-  /** One address to read (`--resource`): only its node's scope is reconciled. */
-  resource?: string;
-  /** The warden's version, for the records' evidence. */
-  version?: string;
-  requestBudget?: number;
-}
-
-/** One address the read expects: a declared node, or a protected branch or integration declared on one. */
-interface Target {
-  address: string;
-  /** The declared node path it sits on. */
-  path: string;
-  resourceType: string;
-  /** The graph node id, null for an instance node (the graph has none). */
-  node: string | null;
-}
-
-/** The address of a declared node: its graph node id, or `instance/<path>`. */
-export function nodeAddress(path: string, node: Pick<NodeConfig, "kind">): string {
-  return node.kind === "group" ? `team/${path}` : node.kind === "project" ? `repo/${path}` : `instance/${path}`;
-}
-
-/** Every address the policy declares, in declaration order: each node, then its protected branches and integrations. */
-export function driftTargets(config: GovernanceConfig): Target[] {
-  const out: Target[] = [];
-  const seen = new Set<string>();
-  const add = (t: Target) => {
-    if (seen.has(t.address)) return;
-    seen.add(t.address);
-    out.push(t);
-  };
-  for (const [path, node] of Object.entries(config.nodes ?? {})) {
-    const graphed = node.kind === "group" || node.kind === "project";
-    const address = nodeAddress(path, node);
-    add({ address, path, resourceType: node.kind, node: graphed ? address : null });
-    if (!graphed) continue;
-    if (node.kind === "project") {
-      for (const pb of node.protectedBranches ?? []) {
-        if (typeof pb?.name === "string") add({ address: `protection/${path}/${pb.name}`, path, resourceType: "protected-branch", node: `protection/${path}/${pb.name}` });
-      }
-    }
-    for (const app of node.integrations ?? []) {
-      if (typeof app?.name === "string") add({ address: `app/${path}/${app.name}`, path, resourceType: "integration", node: `app/${path}/${app.name}` });
-    }
-  }
-  return out;
-}
-
-/** The attribute path of a change: `member[#alice]`, `group-settings`, then `.field` for an update's fields. */
-function entryPath(e: ChangeSetEntry): string {
-  return e.key === e.resourceType ? e.resourceType : `${e.resourceType}[#${e.key}]`;
-}
+const SECRET_TYPES = new Set(["variable", "instance-variable", "webhook", "system-hook", "integration", "deploy-key", "deploy-token", "access-token"]);
 
 /**
- * A planned change as drift attributes. `before` is what the policy declares
- * and `after` what GitLab holds, as a drift record reads them: an update gives
- * one attribute per field, a create the declared value with nothing live, a
- * delete the live value with nothing declared.
+ * A planned change's drift address: the declared node's full path, and the
+ * graph reader's node id (`../graph/reader.ts`) for the types it draws, so
+ * chant places the record on that node. `path` is the node's declared path
+ * (during a pending rename, the new one).
  */
-export function entryAttributes(e: ChangeSetEntry): DriftAttribute[] {
-  const base = entryPath(e);
-  const secret = SECRET_TYPES.has(e.resourceType);
-  const attr = (path: string, declared: unknown, live: unknown): DriftAttribute =>
-    secret
-      ? { path, sensitive: true }
-      : { path, ...(declared !== undefined ? { before: declared } : {}), ...(live !== undefined ? { after: live } : {}) };
-  if (e.kind === "update" && e.fields && e.fields.length > 0) return e.fields.map((f) => attr(`${base}.${f.field}`, f.after, f.before));
-  if (e.kind === "create") return [attr(base, e.after, undefined)];
-  if (e.kind === "delete") return [attr(base, undefined, e.before)];
-  return [attr(base, e.after, e.before)];
+export function driftAddress(path: string, entry: Pick<ChangeSetEntry, "resourceType" | "key">): string {
+  switch (entry.resourceType) {
+    case "group-settings":
+      return `team/${path}`;
+    case "project-settings":
+      return `repo/${path}`;
+    case "protected-branch":
+      return `protection/${path}/${entry.key}`;
+    case "integration":
+      return `app/${path}/${entry.key}`;
+    case "node":
+      return `node/${path}`;
+    default:
+      return entry.key === entry.resourceType ? `${entry.resourceType}/${path}` : `${entry.resourceType}/${path}/${entry.key}`;
+  }
 }
 
+const STATUS_BY_KIND: Record<ChangeSetEntry["kind"], DriftStatus> = {
+  // Declared and absent on GitLab.
+  create: "pending",
+  // Present, and a declared field differs.
+  update: "drifted",
+  // On GitLab, in an owned collection, and not declared.
+  delete: "undeclared",
+};
+
 /** The declared path a scope id stands for: the scope's own path, or the node whose `previously:` it is during a pending rename. */
-function declaredPath(config: GovernanceConfig, scopeId: string): string {
+function declaredPath(policy: GovernanceConfig | undefined, scopeId: string): string {
   const { path } = parseScope(scopeId);
-  if (config.nodes[path] !== undefined) return path;
-  const renamed = Object.entries(config.nodes).find(([, n]) => n.previously === path);
+  if (!policy || policy.nodes[path] !== undefined) return path;
+  const renamed = Object.entries(policy.nodes).find(([, n]) => n.previously === path);
   return renamed ? renamed[0] : path;
 }
 
-/** The target a change lands on: its own protected-branch or integration node when declared, else its node. */
-function targetFor(byAddress: Map<string, Target>, path: string, e: ChangeSetEntry, nodeAddr: string): string {
-  if (e.resourceType === "protected-branch" && byAddress.has(`protection/${path}/${e.key}`)) return `protection/${path}/${e.key}`;
-  if (e.resourceType === "integration" && byAddress.has(`app/${path}/${e.key}`)) return `app/${path}/${e.key}`;
-  return nodeAddr;
+export interface DriftRecordsInput {
+  member: string;
+  /** RFC 3339, given to every record. */
+  observedAt: string;
+  /** Every change set the run diffed, one per cycle and scope. */
+  changeSets: readonly ChangeSet[];
+  /** Cycles that failed before they could plan. */
+  errored?: readonly CycleError[];
+  /** Cycles the request budget skipped. */
+  deferred?: DeferredWork;
+  /** The policy the run reconciled, to name a renamed node by its declared path. */
+  policy?: GovernanceConfig;
 }
 
 /**
- * Read the member's drift: a dry-run reconcile of every cycle, as one drift
- * stream. Refuses `no-drift-read` for a `--resource` the policy does not
- * declare. Throws what the reconcile throws before any cycle runs (an invalid
- * `previously:`), which chant reports as a failed read.
+ * The run's drift records: one per planned change, and a `not-observed`
+ * record for each cycle that errored or was deferred, so an incomplete read
+ * never reads as clean. A later record at the same address replaces an
+ * earlier one.
  */
-export async function readGovernanceDrift(input: GovernanceDriftInput): Promise<ReadDriftResult> {
-  const { member, observedAt } = input;
-  let targets = driftTargets(input.config);
-  let config = input.config;
-  if (input.resource !== undefined) {
-    const t = targets.find((x) => x.address === input.resource);
-    if (!t) {
-      return { refused: { code: "no-drift-read", message: `${input.resource} is not a node, protected branch or integration the policy declares; the addresses are ${targets.map((x) => x.address).join(", ") || "(none)"}` } };
+export function driftRecords(input: DriftRecordsInput): DriftRecord[] {
+  const evidence = driftEvidence();
+  const base = { member: input.member, engine: DRIFT_ENGINE, node: null, observedAt: input.observedAt, read: DRIFT_READ };
+  const byAddress = new Map<string, DriftRecord>();
+  const put = (r: DriftRecord) => byAddress.set(r.address, driftRecord(r));
+
+  for (const cs of input.changeSets) {
+    const path = declaredPath(input.policy, cs.org);
+    for (const entry of cs.entries) {
+      const status = STATUS_BY_KIND[entry.kind];
+      const secret = SECRET_TYPES.has(entry.resourceType);
+      // The drift record's direction: `before` is what was expected (the
+      // policy), `after` what the read found (GitLab).
+      const attributes: DriftAttribute[] | undefined =
+        status === "drifted" && entry.fields?.length
+          ? entry.fields.map((f) =>
+              secret
+                ? { path: f.field, sensitive: true as const }
+                : { path: f.field, ...(f.after !== undefined ? { before: f.after } : {}), ...(f.before !== undefined ? { after: f.before } : {}) },
+            )
+          : undefined;
+      put({
+        ...base,
+        address: driftAddress(path, entry),
+        resourceType: entry.resourceType,
+        status,
+        ...(attributes ? { attributes } : {}),
+        evidence: { ...evidence, engineCode: entry.kind },
+      });
     }
-    targets = [t];
-    config = { ...input.config, nodes: { [t.path]: input.config.nodes[t.path] } };
   }
-  const byAddress = new Map(targets.map((t) => [t.address, t]));
-  const nodeAddrByPath = new Map(Object.entries(config.nodes).map(([p, n]) => [p, nodeAddress(p, n)]));
-
-  const result = await runReconcile({ config, client: input.client, cycles: input.cycles, mode: "dry-run", requestBudget: input.requestBudget });
-
-  const attributes = new Map<string, DriftAttribute[]>();
-  for (const cs of result.changeSets) {
-    const path = declaredPath(config, cs.org);
-    const nodeAddr = nodeAddrByPath.get(path);
-    if (nodeAddr === undefined) continue;
-    for (const e of cs.entries) {
-      const at = targetFor(byAddress, path, e, nodeAddr);
-      if (!byAddress.has(at)) continue;
-      const list = attributes.get(at) ?? [];
-      list.push(...entryAttributes(e));
-      attributes.set(at, list);
-    }
+  for (const e of input.errored ?? []) {
+    put({
+      ...base,
+      address: `cycle/${declaredPath(input.policy, e.org)}/${e.name}`,
+      status: "not-observed",
+      unobserved: { reason: "read-failed", detail: `${e.stage}: ${e.error}` },
+      evidence,
+    });
   }
-
-  // Why an address could not be read in full. A cycle error marks its node
-  // and everything declared on it; a cycle the budget skipped marks every
-  // address, since it ran for no scope.
-  const failed = new Map<string, string[]>();
-  const note = (address: string, why: string) => failed.set(address, [...(failed.get(address) ?? []), why]);
-  for (const e of result.errored) {
-    const path = declaredPath(config, e.org);
-    const why = `${e.name} errored in ${e.stage}: ${e.error}`;
-    const on = targets.filter((t) => t.path === path);
-    // An error at a scope the targets don't name still makes the read incomplete.
-    for (const t of on.length > 0 ? on : targets) note(t.address, why);
+  for (const name of input.deferred?.skippedCycles ?? []) {
+    put({
+      ...base,
+      address: `cycle/${name}`,
+      status: "not-observed",
+      unobserved: { reason: "not-reached", detail: `the ${name} cycle was deferred by the request budget` },
+      evidence,
+    });
   }
-  const skipped = result.deferred.skippedCycles;
+  return [...byAddress.values()];
+}
 
-  const evidence: DriftEvidence = { tool: DRIFT_TOOL, ...(input.version ? { version: input.version } : {}), command: "reconcile --mode dry-run" };
-  const unobservedOf = (address: string): DriftUnobserved | undefined => {
-    const errors = failed.get(address);
-    if (errors) return { reason: "read-failed", detail: errors.join("; ") };
-    if (skipped.length > 0) return { reason: "not-reached", detail: `${skipped.join(", ")} deferred by the request budget` };
-    return undefined;
-  };
-
-  const records: DriftRecord[] = targets.map((t) => {
-    const attrs = attributes.get(t.address) ?? [];
-    const unobserved = unobservedOf(t.address);
-    const head = { member, engine: "warden" as const, address: t.address, resourceType: t.resourceType, node: t.node, observedAt, read: "live-read" as const, evidence };
-    if (attrs.length > 0) return driftRecord({ ...head, status: "drifted", attributes: attrs, ...(unobserved ? { attributesUnobserved: unobserved } : {}) });
-    if (unobserved) return driftRecord({ ...head, status: "not-observed", unobserved });
-    return driftRecord({ ...head, status: "in-sync" });
-  });
-
-  const expected: DriftExpected[] = targets.map((t) => ({ address: t.address, node: t.node, resourceType: t.resourceType }));
-  const start = driftStart({
-    member,
-    engine: "warden",
-    read: "live-read",
-    ...(input.resource !== undefined ? { resource: input.resource } : {}),
-    at: observedAt,
-    expected,
-    evidence,
-  });
+/** The stream for one read: start, the records, settle. */
+export function driftLines(member: string, observedAt: string, records: readonly DriftRecord[]): DriftLine[] {
+  const start = driftStart({ member, engine: DRIFT_ENGINE, read: DRIFT_READ, at: observedAt, expected: [], evidence: driftEvidence() });
   const settled = driftSettle(start, records, observedAt);
-  return { lines: [start, ...settled.records.map(driftRecordLine), settled.line] };
+  return [start, ...settled.records.map(driftRecordLine), settled.line];
+}
+
+export interface ReadGovernanceDriftDeps {
+  /** The environment credentials come from. Default `process.env`. */
+  env?: NodeJS.ProcessEnv;
+  /** Builds the GitLab client. Default {@link createClient}. */
+  createClient?: (opts: { baseUrl: string; token: string }) => GitLabClient;
+  /** The cycles to run. Default every registered cycle. */
+  cycles?: Cycle[];
+  /** The request budget. Default the runner's. */
+  requestBudget?: number;
+}
+
+const refuse = (code: "read-unsupported" | "resource-unsupported" | "no-drift-read", message: string): DriftReaderOutput => ({ refused: { code, message } });
+
+const configString = (config: Record<string, unknown>, key: string, fallback: string): string => {
+  const v = config[key];
+  return typeof v === "string" && v.trim() !== "" ? v : fallback;
+};
+
+/**
+ * The member's policy: the kind's `file` in its directory, then
+ * `governance.yaml` beside it (with a deprecation note on stderr), then
+ * `governance.ts`. Undefined when none exists.
+ */
+function memberPolicy(dir: string, file: string): string | undefined {
+  const found = resolvePolicyPath(join(dir, file));
+  if (found && existsSync(found.path)) {
+    if (found.deprecated) process.stderr.write(deprecationNote(found.path));
+    return found.path;
+  }
+  const ts = join(dirname(join(dir, file)), TS_POLICY_FILE);
+  return existsSync(ts) ? ts : undefined;
+}
+
+/**
+ * Read a forge-governance member's drift. Refuses a read, stack or single
+ * resource it does not have, and a missing token, without throwing. A
+ * missing or invalid policy throws, which chant reports as a failed read.
+ */
+export async function readGovernanceDrift(input: DriftReaderInput, deps: ReadGovernanceDriftDeps = {}): Promise<DriftReaderOutput> {
+  if (input.read !== undefined && input.read !== DRIFT_READ) {
+    return refuse("read-unsupported", `gitlab-warden reads the ${DRIFT_READ} read only (its reconcile dry run), not ${input.read}`);
+  }
+  if (input.stack !== undefined) return refuse("read-unsupported", "gitlab-warden has no stacks; a governance member is read whole");
+  if (input.resource !== undefined) {
+    return refuse("resource-unsupported", `gitlab-warden plans whole groups and projects and cannot read ${input.resource} on its own; read the member without --resource`);
+  }
+
+  const env = deps.env ?? process.env;
+  const config = input.config ?? {};
+  const tokenEnv = configString(config, "tokenEnv", DEFAULT_TOKEN_ENV);
+  const baseUrlEnv = configString(config, "baseUrlEnv", DEFAULT_BASE_URL_ENV);
+  const token = env[tokenEnv]?.trim();
+  if (!token) return refuse("no-drift-read", `${tokenEnv} is not set; gitlab-warden reads its GitLab API token from it to read ${input.member}'s drift`);
+  // GitLab has a default instance, so an unset base URL is gitlab.com, as for the CLI.
+  const baseUrl = env[baseUrlEnv]?.trim() || DEFAULT_BASE_URL;
+
+  const dir = resolve(input.dir);
+  const file = configString(config, "file", POLICY_FILE);
+  const path = memberPolicy(dir, file);
+  if (!path) throw new Error(`no governance policy in ${dir}: neither ${join(dir, file)} nor governance.yaml or governance.ts exists`);
+  const { config: policy } = await loadGovernancePolicy(path, "fold");
+
+  const client = (deps.createClient ?? createClient)({ baseUrl, token });
+  const result = await runReconcile({
+    config: policy,
+    client,
+    cycles: deps.cycles ?? Object.values(CYCLE_REGISTRY),
+    mode: "dry-run",
+    ...(deps.requestBudget !== undefined ? { requestBudget: deps.requestBudget } : {}),
+  });
+  const records = driftRecords({
+    member: input.member,
+    observedAt: input.observedAt,
+    changeSets: result.changeSets,
+    errored: result.errored,
+    deferred: result.deferred,
+    policy,
+  });
+  return { lines: driftLines(input.member, input.observedAt, records) };
 }

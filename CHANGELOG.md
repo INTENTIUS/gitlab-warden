@@ -51,9 +51,10 @@ up to `0.6.1` are not recorded here.
   top-level groups. See [CLI.md](CLI.md#repos).
 - The `forge-governance` kind names a drift reader (`dist/drift-reader.mjs`,
   built by `build:drift`), so `chant workspace drift --member <name>` reads a
-  governance member: a dry-run reconcile of every cycle, one record per graph
-  node, `drifted` with each planned change as an attribute, `in-sync`, or
-  `not-observed` when a cycle errored or was deferred. It takes the token from
+  governance member: a dry-run reconcile of every cycle, one record per
+  planned change (`pending`, `drifted` or `undeclared`), addressed by the
+  graph's node ids where the graph draws one, and a `not-observed` record for
+  each cycle that errored or was deferred. It takes the token from
   `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL`, and refuses with
-  `no-drift-read` without a token or a policy. It needs chant 0.124.96 or
-  later. See [README.md](README.md#drift-in-a-chant-workspace).
+  `no-drift-read` without a token. It needs chant 0.124.96 or later. See
+  [README.md](README.md#drift-in-a-chant-workspace).
