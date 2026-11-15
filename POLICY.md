@@ -6,8 +6,9 @@ The policy is the foundation of this tool: one YAML file with a single top-level
 cycles, the guardrails) serves the policy. It is the one file you must author.
 
 - Loaded from `governance.yml` in the working directory, or the path `--config`
-  names (YAML, JSON if the path ends in `.json`, or a TypeScript policy if it
-  ends in `.ts`; see [A policy in TypeScript](#a-policy-in-typescript)). A
+  names. The format follows the extension: JSON for `.json`, a TypeScript
+  policy for `.ts` (see [A policy in TypeScript](#a-policy-in-typescript)),
+  and YAML otherwise. A
   policy still named `governance.yaml` is read with a deprecation note on
   stderr; rename it to `governance.yml`. Without `--config` and with neither
   YAML file present, `governance.ts` in the working directory is read.
@@ -62,7 +63,7 @@ Three behaviors worth knowing before you write one:
   which is a different API and out of scope). The rename PUT sends the
   `path` alone, so a hand-curated display name survives; only a group whose
   policy manages the name (`groupSettings.name`) gets that managed value
-  sent alongside. One limitation: a pending group rename with declared
+  sent alongside. A pending group rename with declared
   descendant nodes takes two runs — this run's descendant scopes are
   addressed by their declared paths, which only exist once the rename
   (applied last) lands, so the run flags the sequence with a NOTE; apply the
@@ -649,11 +650,11 @@ the two plan identically.
 
 By default warden folds the file to its value with `@intentius/tsad-reference`
 and does not run it, so the plan depends on the file and nothing else. A file
-that is code rather than data, such as one that reads `process.env`
-(`examples/not-data.ts`), is refused with exit 2 and the line and column of the
-part that cannot be folded. `--config-mode` changes this: `run` imports the
-file and takes whatever it exports, and `check` folds and runs it and exits 2
-if the two values differ (see [CLI.md](CLI.md#reconcile-flags)). Either way a
+that is code rather than data is refused with exit 2 and the line and column of
+the part that cannot be folded. One that reads `process.env` is an example
+(`examples/not-data.ts`). The `--config-mode` flag alters this. With `run` the
+tool imports the file and takes whatever it exports, and with `check` it folds
+and runs the file and exits 2 if the two values differ (see [CLI.md](CLI.md#reconcile-flags)). Either way a
 property whose value is `undefined` counts as absent, the same as leaving it
 out of the YAML, so selective-by-omission holds.
 

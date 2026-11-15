@@ -45,8 +45,8 @@ except `--allow-guardrail-override` takes a value.
   read as a TypeScript policy if it ends in `.ts`, and parsed as YAML
   otherwise.
 - A `.ts` policy's default export (or an export named `policy`) is the policy.
-  In `fold` mode a file that cannot be folded, for example one that reads
-  `process.env`, exits 2 with `is not data` and the line and column at fault.
+  In `fold` mode a file that cannot be folded exits 2 with `is not data` and
+  the line and column at fault. One that reads `process.env` is an example.
   In `check` mode a file whose folded and run values differ exits 2 with both
   values. See [POLICY.md](POLICY.md#a-policy-in-typescript).
 - The result must be an object with a `nodes` map ([POLICY.md](POLICY.md)
@@ -166,9 +166,9 @@ exits 2 before any cycle runs. It is on the instance the warden governs and
 is written with the warden's own token (`--token-env`), which needs the `api`
 scope on that project. The records are the drift reader's (see "Drift for
 chant workspaces" below), so the issue lists the same addresses
-`chant workspace drift` reports: each node with planned changes is `drifted`,
-whether a declared item is missing on GitLab, differs, or is an owned one the
-policy does not declare. The issue's title is
+`chant workspace drift` reports: each node with planned changes is `drifted`.
+That covers a declared item that is missing on GitLab, one that differs, and an
+owned one the policy does not declare. The issue's title is
 `Governance drift on <host>/<top-level paths>`, for example
 `Governance drift on gitlab.com/acme`, and a hidden marker with the same name
 finds it again. The pipeline's `CI_PIPELINE_URL` is linked from the body.
@@ -185,9 +185,9 @@ GitLab error while keeping the issue prints
 The drift reader `chant workspace drift --member <name>` runs for a
 `forge-governance` member is not a subcommand. chant imports
 `dist/drift-reader.mjs` from the package and calls it in its own process
-(chant 0.124.96 or later). It reads the member's `governance.yml` and runs
-the same plan `reconcile --mode dry-run` prints, with every cycle, the token
-from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL` (default
+(chant `0.124.96` or later). It reads the member's `governance.yml` and runs
+the same plan `reconcile --mode dry-run` prints, with every cycle. The token
+comes from `GITLAB_TOKEN` and the instance from `GITLAB_BASE_URL` (default
 `https://gitlab.com`). It never applies. There is one record per declared
 node, read `live-read`: `in-sync`, or `drifted` with each planned change under
 the node as an attribute; [README.md](README.md#drift-in-a-chant-workspace)
