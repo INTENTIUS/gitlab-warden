@@ -53,13 +53,14 @@
     "ajv": "^8.20.0",
     "esbuild": "^0.28.0",
     "sentences": "^0.1.1",
+    "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "^4.1.9"
   },
   "dependencies": {
-    "@intentius/chant": "^0.124.97",
-    "@intentius/chant-lexicon-github": "^0.124.97",
-    "@intentius/chant-lexicon-gitlab": "^0.124.97",
+    "@intentius/chant": "^0.124.103",
+    "@intentius/chant-lexicon-github": "^0.124.101",
+    "@intentius/chant-lexicon-gitlab": "^0.124.101",
     "@intentius/tsad-reference": "^2.3.0",
     "yaml": "^2.9.0"
   },
